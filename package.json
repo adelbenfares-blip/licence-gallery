@@ -1,0 +1,11 @@
+{
+  "name": "licence-gallery-collector",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "collect:hotwheels": "node collector/collect-hotwheels.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}
