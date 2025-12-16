@@ -1,1 +1,27 @@
-[]
+[
+  {
+    "retailer": "other",
+    "product_url": "https://www.merriam-webster.com/dictionary/hot",
+    "image_url": "https://merriam-webster.com/assets/mw/static/social-media-share/mw-logo-245x245@1x.png"
+  },
+  {
+    "retailer": "other",
+    "product_url": "https://dictionary.cambridge.org/dictionary/english/hot",
+    "image_url": "https://dictionary.cambridge.org/external/images/og-image.png"
+  },
+  {
+    "retailer": "other",
+    "product_url": "https://www.thefreedictionary.com/hot",
+    "image_url": "https://img.tfd.com/wn/DC/17E66D-hot.jpg"
+  },
+  {
+    "retailer": "other",
+    "product_url": "https://www.wordreference.com/definition/hot",
+    "image_url": "https://cdnawsw.wordreference.net/images/WR_fbicon_200x200.png"
+  },
+  {
+    "retailer": "other",
+    "product_url": "https://dictionary.cambridge.org/us/dictionary/learner-english/hot",
+    "image_url": "https://dictionary.cambridge.org/us/external/images/og-image.png"
+  }
+]
