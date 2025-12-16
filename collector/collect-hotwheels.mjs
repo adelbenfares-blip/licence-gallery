@@ -1,79 +1,105 @@
 import fs from "fs";
 
-const LICENSE_SLUG = "hot-wheels";
+const OUT_PATH = "data/hot-wheels.json";
+const DEBUG_DIR = "debug";
 const QUERY = "hot wheels";
-const OUT_PATH = `data/${LICENSE_SLUG}.json`;
-
 const results = [];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function ensureDirs() {
+  fs.mkdirSync("data", { recursive: true });
+  fs.mkdirSync(DEBUG_DIR, { recursive: true });
+}
 
 function dedupe(list) {
   const m = new Map();
   for (const x of list) {
     if (!x?.image_url || !x?.product_url) continue;
-    const key = `${x.retailer}::${x.product_url}`;
-    if (!m.has(key)) m.set(key, x);
+    m.set(`${x.retailer}::${x.product_url}`, x);
   }
-  return Array.from(m.values());
+  return [...m.values()];
 }
 
-function normalizeImage(url) {
-  if (!url) return url;
-  return url.split("?")[0] || url;
+async function dumpDebug(page, name) {
+  ensureDirs();
+  await page.screenshot({ path: `${DEBUG_DIR}/${name}.png`, fullPage: true });
+  const html = await page.content();
+  fs.writeFileSync(`${DEBUG_DIR}/${name}.html`, html, "utf-8");
 }
 
-async function collectFromHM(page) {
+async function autoScroll(page, times = 10) {
+  for (let i = 0; i < times; i++) {
+    await page.mouse.wheel(0, 1400);
+    await sleep(500);
+  }
+}
+
+// H&M
+async function collectHM(page) {
   const url = `https://www2.hm.com/en_gb/search-results.html?q=${encodeURIComponent(QUERY)}`;
   await page.goto(url, { waitUntil: "domcontentloaded" });
-  await sleep(1500);
-
-  for (let i = 0; i < 8; i++) {
-    await page.mouse.wheel(0, 1300);
-    await sleep(450);
-  }
-
-  const items = await page.$$eval("a[href*='/productpage.']", (anchors) => {
-    const seen = new Set();
-    const out = [];
-    for (const a of anchors) {
-      const href = a.href;
-      if (!href || seen.has(href)) continue;
-      seen.add(href);
-
-      const img = a.querySelector("img") || a.querySelector("picture img");
-      const src = img?.currentSrc || img?.src || img?.getAttribute("src");
-      if (!src) continue;
-
-      out.push({ retailer: "hm", product_url: href, image_url: src });
-    }
-    return out;
-  });
-
-  results.push(...items);
-}
-
-async function collectFromNext(page) {
-  const url = `https://www.next.co.uk/search?w=${encodeURIComponent(QUERY)}`;
-  await page.goto(url, { waitUntil: "domcontentloaded" });
-  await sleep(1500);
-
-  for (let i = 0; i < 6; i++) {
-    await page.mouse.wheel(0, 1400);
-    await sleep(450);
-  }
+  await sleep(2000);
+  await autoScroll(page, 10);
 
   const items = await page.$$eval("a[href]", (anchors) => {
     const out = [];
     const seen = new Set();
     for (const a of anchors) {
       const href = a.href;
-      if (!href || !href.includes("next.co.uk") || seen.has(href)) continue;
+      if (!href || seen.has(href)) continue;
+      if (!href.includes("/productpage.")) continue;
 
-      const img = a.querySelector("img");
-      const src = img?.currentSrc || img?.src || img?.getAttribute("src");
+      // Try multiple ways to find an image
+      const img =
+        a.querySelector("img") ||
+        a.querySelector("picture img") ||
+        a.querySelector("[style*='background-image']");
+
+      let src =
+        img?.currentSrc ||
+        img?.src ||
+        img?.getAttribute?.("src") ||
+        img?.getAttribute?.("data-src");
+
+      if (!src && img?.style?.backgroundImage) {
+        src = img.style.backgroundImage.replace(/^url\\(["']?/, "").replace(/["']?\\)$/, "");
+      }
+
       if (!src) continue;
+      seen.add(href);
+      out.push({ retailer: "hm", product_url: href, image_url: src });
+    }
+    return out;
+  });
 
+  results.push(...items);
+  return items.length;
+}
+
+// Next
+async function collectNext(page) {
+  const url = `https://www.next.co.uk/search?w=${encodeURIComponent(QUERY)}`;
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await sleep(2000);
+  await autoScroll(page, 10);
+
+  const items = await page.$$eval("a[href]", (anchors) => {
+    const out = [];
+    const seen = new Set();
+    for (const a of anchors) {
+      const href = a.href;
+      if (!href || seen.has(href)) continue;
+      if (!href.includes("next.co.uk")) continue;
+
+      const img = a.querySelector("img") || a.querySelector("picture img");
+      const src =
+        img?.currentSrc ||
+        img?.src ||
+        img?.getAttribute?.("src") ||
+        img?.getAttribute?.("data-src");
+
+      if (!src) continue;
       seen.add(href);
       out.push({ retailer: "next", product_url: href, image_url: src });
     }
@@ -81,9 +107,11 @@ async function collectFromNext(page) {
   });
 
   results.push(...items);
+  return items.length;
 }
 
 async function main() {
+  ensureDirs();
   const { chromium } = await import("playwright");
 
   const browser = await chromium.launch({ headless: true });
@@ -92,29 +120,31 @@ async function main() {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
   });
 
+  let hmCount = 0;
+  let nextCount = 0;
+
   try {
-    await collectFromHM(page);
+    hmCount = await collectHM(page);
+    await dumpDebug(page, `hm_${hmCount}`);
   } catch (e) {
-    console.error("H&M collector failed:", e);
+    console.error("H&M failed:", e);
+    await dumpDebug(page, "hm_error");
   }
 
   try {
-    await collectFromNext(page);
+    nextCount = await collectNext(page);
+    await dumpDebug(page, `next_${nextCount}`);
   } catch (e) {
-    console.error("Next collector failed:", e);
+    console.error("Next failed:", e);
+    await dumpDebug(page, "next_error");
   }
 
   await browser.close();
 
-  const final = dedupe(results).map((x) => ({
-    ...x,
-    image_url: normalizeImage(x.image_url),
-  }));
+  const final = dedupe(results);
 
-  fs.mkdirSync("data", { recursive: true });
   fs.writeFileSync(OUT_PATH, JSON.stringify(final, null, 2), "utf-8");
-
-  console.log(`✅ Wrote ${final.length} items to ${OUT_PATH}`);
+  console.log(`Wrote ${final.length} items (hm=${hmCount}, next=${nextCount}) to ${OUT_PATH}`);
 }
 
 main().catch((e) => {
