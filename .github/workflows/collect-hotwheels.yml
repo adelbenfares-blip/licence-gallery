@@ -23,21 +23,6 @@ jobs:
         with:
           node-version: 20
 
-      - name: Show versions
-        run: |
-          node -v
-          npm -v
-
-      # Self-contained install (does not rely on package-lock/package.json being correct)
-      - name: Install Playwright (dependency)
-        run: |
-          npm init -y
-          npm install --no-fund --no-audit playwright@1.49.0
-          npm ls playwright
-
-      - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
-
       - name: Run collector
         run: node collector/collect-hotwheels.mjs
 
