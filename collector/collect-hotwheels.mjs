@@ -2,21 +2,45 @@ import fs from "fs";
 
 const OUT_PATH = "data/hot-wheels.json";
 const DEBUG_DIR = "debug";
-const LICENSE_QUERY = "hot wheels";
 const MAX_ITEMS = 200;
 
-// Add/remove sources here
+// We deliberately quote "Hot Wheels" and force apparel intent,
+// and we exclude common “dictionary/definition” noise.
 const SOURCES = [
   {
-    name: "Retailers (via Bing)",
-    query: `${LICENSE_QUERY} (t-shirt OR tee OR sweatshirt OR hoodie OR joggers OR pyjamas OR kids OR boys) (site:next.co.uk OR site:hm.com OR site:zara.com OR site:zalando.co.uk OR site:asos.com)`,
+    name: "Retail apparel",
+    query:
+      `"Hot Wheels" kids clothing t-shirt hoodie sweatshirt joggers pyjamas ` +
+      `-dictionary -definition -meaning -merriam -cambridge -wordreference -wikipedia`,
     tag: "retailer",
   },
   {
-    name: "Pinterest (via Bing)",
-    query: `${LICENSE_QUERY} (shirt OR t-shirt OR sweatshirt OR hoodie OR joggers) site:pinterest`,
+    name: "Pinterest discovery",
+    query: `"Hot Wheels" kids clothing t-shirt hoodie site:pinterest.com`,
     tag: "pinterest",
   },
+];
+
+// Domains we allow into the gallery.
+// Add more retailers here as you expand.
+const ALLOWED_RETAILER_MATCH = [
+  { key: "next", match: ["next.co.uk"] },
+  { key: "hm", match: ["hm.com", "www2.hm.com"] },
+  { key: "zara", match: ["zara.com"] },
+  { key: "asos", match: ["asos.com"] },
+  { key: "zalando", match: ["zalando.co.uk", "zalando.com"] },
+  { key: "pinterest", match: ["pinterest.com", "pinterest.co.uk", "pinterest.fr"] },
+];
+
+// Optional global blocklist to avoid obvious non-product pages
+const URL_BLOCKLIST_SUBSTR = [
+  "dictionary",
+  "definition",
+  "wordreference",
+  "merriam-webster",
+  "cambridge.org/dictionary",
+  "thefreedictionary",
+  "wikipedia.org",
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -43,7 +67,7 @@ function writeDebugFile(name, content) {
 function dedupe(list) {
   const map = new Map();
   for (const item of list) {
-    if (!item?.image_url || !item?.product_url) continue;
+    if (!item?.image_url || !item?.product_url || !item?.retailer) continue;
     map.set(`${item.retailer}::${item.product_url}`, item);
   }
   return Array.from(map.values());
@@ -51,17 +75,19 @@ function dedupe(list) {
 
 function normalizeRetailer(url) {
   const u = url.toLowerCase();
-  if (u.includes("next.co.uk")) return "next";
-  if (u.includes("hm.com") || u.includes("www2.hm.com")) return "hm";
-  if (u.includes("zara.com")) return "zara";
-  if (u.includes("pinterest.")) return "pinterest";
-  if (u.includes("asos.com")) return "asos";
-  if (u.includes("zalando.")) return "zalando";
-  return "other";
+
+  for (const r of ALLOWED_RETAILER_MATCH) {
+    if (r.match.some((m) => u.includes(m))) return r.key;
+  }
+  return null; // IMPORTANT: unknown domains are dropped
+}
+
+function isBlockedUrl(url) {
+  const u = url.toLowerCase();
+  return URL_BLOCKLIST_SUBSTR.some((bad) => u.includes(bad));
 }
 
 function extractMeta(html, propertyOrName) {
-  // property="og:image" content="..."
   const reProp = new RegExp(
     `<meta[^>]+property=["']${propertyOrName}["'][^>]+content=["']([^"']+)["']`,
     "i"
@@ -69,7 +95,6 @@ function extractMeta(html, propertyOrName) {
   const m1 = html.match(reProp);
   if (m1?.[1]) return m1[1];
 
-  // name="twitter:image" content="..."
   const reName = new RegExp(
     `<meta[^>]+name=["']${propertyOrName}["'][^>]+content=["']([^"']+)["']`,
     "i"
@@ -133,10 +158,8 @@ async function collectFromBingRss(query, label) {
 }
 
 async function resolveUrlToImage(url) {
-  // Fetch the page and extract og:image
   const { status, text: html } = await fetchText(url);
 
-  // Pinterest sometimes blocks; still worth trying
   const ogImage =
     extractMeta(html, "og:image") ||
     extractMeta(html, "twitter:image") ||
@@ -144,11 +167,7 @@ async function resolveUrlToImage(url) {
 
   const title = extractTitle(html);
 
-  return {
-    status,
-    ogImage,
-    title,
-  };
+  return { status, ogImage, title };
 }
 
 async function main() {
@@ -170,23 +189,33 @@ async function main() {
       logDebug(`Source "${src.name}" ERROR: ${String(e)}`);
     }
   }
-  candidateUrls = Array.from(new Set(candidateUrls));
 
-  // 2) Resolve each URL to a usable image (og:image)
-  const maxToProcess = Math.min(candidateUrls.length, 250);
+  candidateUrls = Array.from(new Set(candidateUrls)).filter(
+    (u) => !isBlockedUrl(u)
+  );
+
+  // 2) Resolve each URL to og:image
+  const maxToProcess = Math.min(candidateUrls.length, 350);
 
   for (let i = 0; i < maxToProcess; i++) {
     const url = candidateUrls[i];
+
     const retailer = normalizeRetailer(url);
+    if (!retailer) {
+      // Drop unknown domains entirely (prevents dictionary/random sites)
+      processedLog.push({ url, retailer: null, status: "SKIP_DOMAIN", hasImage: false });
+      continue;
+    }
 
     try {
       const { status, ogImage, title } = await resolveUrlToImage(url);
 
+      const hasImage = !!ogImage;
       processedLog.push({
         url,
         retailer,
         status,
-        hasImage: !!ogImage,
+        hasImage,
         title: title.slice(0, 120),
       });
 
