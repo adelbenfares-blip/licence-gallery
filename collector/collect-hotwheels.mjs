@@ -2,8 +2,22 @@ import fs from "fs";
 
 const OUT_PATH = "data/hot-wheels.json";
 const DEBUG_DIR = "debug";
-const QUERY = "hot wheels";
-const results = [];
+const LICENSE_QUERY = "hot wheels";
+const MAX_ITEMS = 200;
+
+// Add/remove sources here
+const SOURCES = [
+  {
+    name: "Retailers (via Bing)",
+    query: `${LICENSE_QUERY} (t-shirt OR tee OR sweatshirt OR hoodie OR joggers OR pyjamas OR kids OR boys) (site:next.co.uk OR site:hm.com OR site:zara.com OR site:zalando.co.uk OR site:asos.com)`,
+    tag: "retailer",
+  },
+  {
+    name: "Pinterest (via Bing)",
+    query: `${LICENSE_QUERY} (shirt OR t-shirt OR sweatshirt OR hoodie OR joggers) site:pinterest`,
+    tag: "pinterest",
+  },
+];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -14,7 +28,16 @@ function ensureDirs() {
 
 function logDebug(msg) {
   ensureDirs();
-  fs.appendFileSync(`${DEBUG_DIR}/run.txt`, `[${new Date().toISOString()}] ${msg}\n`, "utf-8");
+  fs.appendFileSync(
+    `${DEBUG_DIR}/run.txt`,
+    `[${new Date().toISOString()}] ${msg}\n`,
+    "utf-8"
+  );
+}
+
+function writeDebugFile(name, content) {
+  ensureDirs();
+  fs.writeFileSync(`${DEBUG_DIR}/${name}`, content, "utf-8");
 }
 
 function dedupe(list) {
@@ -26,198 +49,171 @@ function dedupe(list) {
   return Array.from(map.values());
 }
 
-async function dumpDebug(page, name) {
-  ensureDirs();
-  await page.screenshot({ path: `${DEBUG_DIR}/${name}.png`, fullPage: true });
-  const html = await page.content();
-  fs.writeFileSync(`${DEBUG_DIR}/${name}.html`, html, "utf-8");
+function normalizeRetailer(url) {
+  const u = url.toLowerCase();
+  if (u.includes("next.co.uk")) return "next";
+  if (u.includes("hm.com") || u.includes("www2.hm.com")) return "hm";
+  if (u.includes("zara.com")) return "zara";
+  if (u.includes("pinterest.")) return "pinterest";
+  if (u.includes("asos.com")) return "asos";
+  if (u.includes("zalando.")) return "zalando";
+  return "other";
 }
 
-async function autoScroll(page, times = 10) {
-  for (let i = 0; i < times; i++) {
-    await page.mouse.wheel(0, 1400);
-    await sleep(500);
+function extractMeta(html, propertyOrName) {
+  // property="og:image" content="..."
+  const reProp = new RegExp(
+    `<meta[^>]+property=["']${propertyOrName}["'][^>]+content=["']([^"']+)["']`,
+    "i"
+  );
+  const m1 = html.match(reProp);
+  if (m1?.[1]) return m1[1];
+
+  // name="twitter:image" content="..."
+  const reName = new RegExp(
+    `<meta[^>]+name=["']${propertyOrName}["'][^>]+content=["']([^"']+)["']`,
+    "i"
+  );
+  const m2 = html.match(reName);
+  if (m2?.[1]) return m2[1];
+
+  return null;
+}
+
+function extractTitle(html) {
+  const m = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+  return m ? m[1].trim() : "";
+}
+
+function parseBingRssLinks(xml) {
+  const links = [];
+  const itemRe = /<item\b[\s\S]*?<\/item>/gi;
+  const linkRe = /<link>([\s\S]*?)<\/link>/i;
+
+  const items = xml.match(itemRe) || [];
+  for (const item of items) {
+    const lm = item.match(linkRe);
+    if (!lm) continue;
+    const url = lm[1].trim();
+    if (url.startsWith("http")) links.push(url);
   }
+  return Array.from(new Set(links));
 }
 
-async function tryAcceptCookies(page) {
-  const selectors = [
-    "#onetrust-accept-btn-handler",
-    "button#onetrust-accept-btn-handler",
-    "button:has-text('Accept all')",
-    "button:has-text('Accept All')",
-    "button:has-text('Accept')",
-    "button:has-text('I agree')",
-    "button:has-text('Agree')",
-    "button:has-text('Allow all')",
-  ];
-
-  for (const sel of selectors) {
-    try {
-      const el = await page.$(sel);
-      if (el) {
-        await el.click({ timeout: 1500 });
-        await sleep(800);
-        return true;
-      }
-    } catch {}
-  }
-  return false;
-}
-
-/* ---------------- H&M ---------------- */
-async function collectHM(page) {
-  const url = `https://www2.hm.com/en_gb/search-results.html?q=${encodeURIComponent(QUERY)}`;
-  logDebug(`HM goto: ${url}`);
-
-  await page.goto(url, { waitUntil: "domcontentloaded" });
-  await sleep(1500);
-
-  await dumpDebug(page, "hm_before_consent");
-  await tryAcceptCookies(page);
-  await sleep(800);
-  await dumpDebug(page, "hm_after_consent");
-
-  await autoScroll(page, 12);
-
-  const items = await page.$$eval("a[href]", (anchors) => {
-    const out = [];
-    const seen = new Set();
-
-    for (const a of anchors) {
-      const href = a.href;
-      if (!href || seen.has(href)) continue;
-      if (!href.includes("/productpage.")) continue;
-
-      const img =
-        a.querySelector("img") ||
-        a.querySelector("picture img") ||
-        a.querySelector("[style*='background-image']");
-
-      let src =
-        img?.currentSrc ||
-        img?.src ||
-        img?.getAttribute?.("src") ||
-        img?.getAttribute?.("data-src") ||
-        img?.getAttribute?.("data-srcset");
-
-      // Safe background-image parsing
-      if (!src && img?.style?.backgroundImage) {
-        const bg = img.style.backgroundImage;
-        const m = bg.match(/url\((['"]?)(.*?)\1\)/);
-        if (m && m[2]) src = m[2];
-      }
-
-      if (!src) continue;
-
-      seen.add(href);
-      out.push({ retailer: "hm", product_url: href, image_url: src });
-    }
-
-    return out;
+async function fetchText(url) {
+  const res = await fetch(url, {
+    redirect: "follow",
+    headers: {
+      "user-agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+      accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "accept-language": "en-GB,en;q=0.9",
+    },
   });
 
-  results.push(...items);
-  await dumpDebug(page, `hm_done_${items.length}`);
-  logDebug(`HM items: ${items.length}`);
-  return items.length;
+  const text = await res.text();
+  return { status: res.status, text };
 }
 
-/* ---------------- NEXT ---------------- */
-async function collectNext(page) {
-  const url = `https://www.next.co.uk/search?w=${encodeURIComponent(QUERY)}`;
-  logDebug(`NEXT goto: ${url}`);
+async function collectFromBingRss(query, label) {
+  const rssUrl = `https://www.bing.com/search?q=${encodeURIComponent(
+    query
+  )}&format=rss`;
 
-  await page.goto(url, { waitUntil: "domcontentloaded" });
-  await sleep(1500);
+  logDebug(`BING(${label}) RSS: ${rssUrl}`);
 
-  await dumpDebug(page, "next_before_consent");
-  await tryAcceptCookies(page);
-  await sleep(800);
-  await dumpDebug(page, "next_after_consent");
+  const { status, text: rss } = await fetchText(rssUrl);
+  logDebug(`BING(${label}) RSS status: ${status}`);
 
-  await autoScroll(page, 12);
+  // keep a copy for debugging
+  writeDebugFile(`bing_${label}.xml`, rss.slice(0, 250000));
 
-  const items = await page.$$eval("a[href]", (anchors) => {
-    const out = [];
-    const seen = new Set();
-
-    for (const a of anchors) {
-      const href = a.href;
-      if (!href || seen.has(href)) continue;
-      if (!href.includes("next.co.uk")) continue;
-
-      const img = a.querySelector("img") || a.querySelector("picture img");
-      const src =
-        img?.currentSrc ||
-        img?.src ||
-        img?.getAttribute?.("src") ||
-        img?.getAttribute?.("data-src") ||
-        img?.getAttribute?.("data-srcset");
-
-      if (!src) continue;
-
-      seen.add(href);
-      out.push({ retailer: "next", product_url: href, image_url: src });
-    }
-
-    return out;
-  });
-
-  results.push(...items);
-  await dumpDebug(page, `next_done_${items.length}`);
-  logDebug(`NEXT items: ${items.length}`);
-  return items.length;
+  return parseBingRssLinks(rss);
 }
 
-/* ---------------- MAIN ---------------- */
+async function resolveUrlToImage(url) {
+  // Fetch the page and extract og:image
+  const { status, text: html } = await fetchText(url);
+
+  // Pinterest sometimes blocks; still worth trying
+  const ogImage =
+    extractMeta(html, "og:image") ||
+    extractMeta(html, "twitter:image") ||
+    extractMeta(html, "image");
+
+  const title = extractTitle(html);
+
+  return {
+    status,
+    ogImage,
+    title,
+  };
+}
+
 async function main() {
   ensureDirs();
   fs.writeFileSync(`${DEBUG_DIR}/run.txt`, "", "utf-8");
-  logDebug("Collector starting");
+  logDebug("Feed-based collector starting");
 
-  const { chromium } = await import("playwright");
+  const collected = [];
+  const processedLog = [];
 
-  const browser = await chromium.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
-  });
+  // 1) Get candidate URLs from Bing RSS
+  let candidateUrls = [];
+  for (const src of SOURCES) {
+    try {
+      const urls = await collectFromBingRss(src.query, src.tag);
+      candidateUrls.push(...urls);
+      logDebug(`Source "${src.name}" URLs: ${urls.length}`);
+    } catch (e) {
+      logDebug(`Source "${src.name}" ERROR: ${String(e)}`);
+    }
+  }
+  candidateUrls = Array.from(new Set(candidateUrls));
 
-  const page = await browser.newPage({
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
-    viewport: { width: 1280, height: 720 },
-  });
+  // 2) Resolve each URL to a usable image (og:image)
+  const maxToProcess = Math.min(candidateUrls.length, 250);
 
-  // Guaranteed first debug capture (even before visiting retailer pages)
-  await page.setContent("<html><body><h1>Collector started</h1></body></html>");
-  await dumpDebug(page, "start");
-  logDebug("Wrote start debug files");
+  for (let i = 0; i < maxToProcess; i++) {
+    const url = candidateUrls[i];
+    const retailer = normalizeRetailer(url);
 
-  let hmCount = 0;
-  let nextCount = 0;
+    try {
+      const { status, ogImage, title } = await resolveUrlToImage(url);
 
-  try {
-    hmCount = await collectHM(page);
-  } catch (e) {
-    logDebug(`HM error: ${String(e)}`);
-    await dumpDebug(page, "hm_error");
+      processedLog.push({
+        url,
+        retailer,
+        status,
+        hasImage: !!ogImage,
+        title: title.slice(0, 120),
+      });
+
+      if (ogImage) {
+        collected.push({
+          retailer,
+          product_url: url,
+          image_url: ogImage,
+        });
+      }
+    } catch (e) {
+      processedLog.push({ url, retailer, status: "ERR", hasImage: false });
+    }
+
+    // small delay reduces rate-limits
+    await sleep(200);
+
+    if (collected.length >= MAX_ITEMS) break;
   }
 
-  try {
-    nextCount = await collectNext(page);
-  } catch (e) {
-    logDebug(`NEXT error: ${String(e)}`);
-    await dumpDebug(page, "next_error");
-  }
+  writeDebugFile("processed.json", JSON.stringify(processedLog, null, 2));
 
-  await browser.close();
-
-  const final = dedupe(results);
+  const final = dedupe(collected).slice(0, MAX_ITEMS);
   fs.writeFileSync(OUT_PATH, JSON.stringify(final, null, 2), "utf-8");
 
-  logDebug(`Finished. Total items: ${final.length} (hm=${hmCount}, next=${nextCount})`);
-  console.log(`Finished. Total items: ${final.length} (hm=${hmCount}, next=${nextCount})`);
+  logDebug(`Finished. Total items written: ${final.length}`);
+  console.log(`Finished. Total items written: ${final.length}`);
 }
 
 main().catch((e) => {
