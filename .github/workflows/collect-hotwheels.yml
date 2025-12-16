@@ -1,65 +1,179 @@
-name: Collect Hot Wheels
+import fs from "fs";
 
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: "15 6 * * *"
+const OUT_PATH = "data/hot-wheels.json";
+const DEBUG_DIR = "debug";
+const QUERY = "hot wheels";
+const results = [];
 
-permissions:
-  contents: write
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-jobs:
-  collect:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: true
-          fetch-depth: 0
+function ensureDirs() {
+  fs.mkdirSync("data", { recursive: true });
+  fs.mkdirSync(DEBUG_DIR, { recursive: true });
+}
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
+function dedupe(list) {
+  const map = new Map();
+  for (const item of list) {
+    if (!item?.image_url || !item?.product_url) continue;
+    map.set(`${item.retailer}::${item.product_url}`, item);
+  }
+  return Array.from(map.values());
+}
 
-      - name: Show versions
-        run: |
-          node -v
-          npm -v
+async function dumpDebug(page, name) {
+  ensureDirs();
+  await page.screenshot({
+    path: `${DEBUG_DIR}/${name}.png`,
+    fullPage: true,
+  });
+  const html = await page.content();
+  fs.writeFileSync(`${DEBUG_DIR}/${name}.html`, html, "utf-8");
+}
 
-      # Self-contained install (does not rely on package-lock/package.json being correct)
-      - name: Install Playwright (dependency)
-        run: |
-          npm init -y
-          npm install --no-fund --no-audit playwright@1.49.0
-          npm ls playwright
+async function autoScroll(page, times = 10) {
+  for (let i = 0; i < times; i++) {
+    await page.mouse.wheel(0, 1400);
+    await sleep(500);
+  }
+}
 
-      - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
+/* ---------------- H&M ---------------- */
+async function collectHM(page) {
+  const url = `https://www2.hm.com/en_gb/search-results.html?q=${encodeURIComponent(
+    QUERY
+  )}`;
 
-      - name: Run collector
-        run: node collector/collect-hotwheels.mjs
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await sleep(2000);
+  await autoScroll(page, 10);
 
-      - name: Upload debug artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: collector-debug
-          path: |
-            debug/**
-            data/hot-wheels.json
+  const items = await page.$$eval("a[href]", (anchors) => {
+    const out = [];
+    const seen = new Set();
 
-      - name: Commit updated JSON
-        if: always()
-        run: |
-          if [ ! -f data/hot-wheels.json ]; then
-            echo "data/hot-wheels.json not found; skipping commit."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/hot-wheels.json
-          git commit -m "Update hot-wheels.json" || exit 0
-          git pull --rebase || true
-          git push
+    for (const a of anchors) {
+      const href = a.href;
+      if (!href || seen.has(href)) continue;
+      if (!href.includes("/productpage.")) continue;
+
+      let img =
+        a.querySelector("img") ||
+        a.querySelector("picture img") ||
+        a.querySelector("[style*='background-image']");
+
+      let src =
+        img?.currentSrc ||
+        img?.src ||
+        img?.getAttribute?.("src") ||
+        img?.getAttribute?.("data-src");
+
+      // SAFE background-image extraction (no regex crash)
+      if (!src && img?.style?.backgroundImage) {
+        const bg = img.style.backgroundImage;
+        const m = bg.match(/url\\((['"]?)(.*?)\\1\\)/);
+        if (m && m[2]) src = m[2];
+      }
+
+      if (!src) continue;
+
+      seen.add(href);
+      out.push({
+        retailer: "hm",
+        product_url: href,
+        image_url: src,
+      });
+    }
+
+    return out;
+  });
+
+  results.push(...items);
+  return items.length;
+}
+
+/* ---------------- NEXT ---------------- */
+async function collectNext(page) {
+  const url = `https://www.next.co.uk/search?w=${encodeURIComponent(QUERY)}`;
+
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await sleep(2000);
+  await autoScroll(page, 10);
+
+  const items = await page.$$eval("a[href]", (anchors) => {
+    const out = [];
+    const seen = new Set();
+
+    for (const a of anchors) {
+      const href = a.href;
+      if (!href || seen.has(href)) continue;
+      if (!href.includes("next.co.uk")) continue;
+
+      const img = a.querySelector("img") || a.querySelector("picture img");
+      const src =
+        img?.currentSrc ||
+        img?.src ||
+        img?.getAttribute?.("src") ||
+        img?.getAttribute?.("data-src");
+
+      if (!src) continue;
+
+      seen.add(href);
+      out.push({
+        retailer: "next",
+        product_url: href,
+        image_url: src,
+      });
+    }
+
+    return out;
+  });
+
+  results.push(...items);
+  return items.length;
+}
+
+/* ---------------- MAIN ---------------- */
+async function main() {
+  ensureDirs();
+  const { chromium } = await import("playwright");
+
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage({
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+  });
+
+  let hmCount = 0;
+  let nextCount = 0;
+
+  try {
+    hmCount = await collectHM(page);
+    await dumpDebug(page, `hm_${hmCount}`);
+  } catch (e) {
+    console.error("H&M failed:", e);
+    await dumpDebug(page, "hm_error");
+  }
+
+  try {
+    nextCount = await collectNext(page);
+    await dumpDebug(page, `next_${nextCount}`);
+  } catch (e) {
+    console.error("Next failed:", e);
+    await dumpDebug(page, "next_error");
+  }
+
+  await browser.close();
+
+  const final = dedupe(results);
+  fs.writeFileSync(OUT_PATH, JSON.stringify(final, null, 2), "utf-8");
+
+  console.log(
+    `Finished. Collected ${final.length} items (hm=${hmCount}, next=${nextCount})`
+  );
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
