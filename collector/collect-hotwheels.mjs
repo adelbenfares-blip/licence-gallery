@@ -12,13 +12,18 @@ function ensureDirs() {
   fs.mkdirSync(DEBUG_DIR, { recursive: true });
 }
 
+function logDebug(msg) {
+  ensureDirs();
+  fs.appendFileSync(`${DEBUG_DIR}/run.txt`, `[${new Date().toISOString()}] ${msg}\n`, "utf-8");
+}
+
 function dedupe(list) {
-  const m = new Map();
-  for (const x of list) {
-    if (!x?.image_url || !x?.product_url) continue;
-    m.set(`${x.retailer}::${x.product_url}`, x);
+  const map = new Map();
+  for (const item of list) {
+    if (!item?.image_url || !item?.product_url) continue;
+    map.set(`${item.retailer}::${item.product_url}`, item);
   }
-  return [...m.values()];
+  return Array.from(map.values());
 }
 
 async function dumpDebug(page, name) {
@@ -35,119 +40,55 @@ async function autoScroll(page, times = 10) {
   }
 }
 
-// H&M
+async function tryAcceptCookies(page) {
+  const selectors = [
+    "#onetrust-accept-btn-handler",
+    "button#onetrust-accept-btn-handler",
+    "button:has-text('Accept all')",
+    "button:has-text('Accept All')",
+    "button:has-text('Accept')",
+    "button:has-text('I agree')",
+    "button:has-text('Agree')",
+    "button:has-text('Allow all')",
+  ];
+
+  for (const sel of selectors) {
+    try {
+      const el = await page.$(sel);
+      if (el) {
+        await el.click({ timeout: 1500 });
+        await sleep(800);
+        return true;
+      }
+    } catch {}
+  }
+  return false;
+}
+
+/* ---------------- H&M ---------------- */
 async function collectHM(page) {
   const url = `https://www2.hm.com/en_gb/search-results.html?q=${encodeURIComponent(QUERY)}`;
+  logDebug(`HM goto: ${url}`);
+
   await page.goto(url, { waitUntil: "domcontentloaded" });
-  await sleep(2000);
-  await autoScroll(page, 10);
+  await sleep(1500);
+
+  await dumpDebug(page, "hm_before_consent");
+  await tryAcceptCookies(page);
+  await sleep(800);
+  await dumpDebug(page, "hm_after_consent");
+
+  await autoScroll(page, 12);
 
   const items = await page.$$eval("a[href]", (anchors) => {
     const out = [];
     const seen = new Set();
+
     for (const a of anchors) {
       const href = a.href;
       if (!href || seen.has(href)) continue;
       if (!href.includes("/productpage.")) continue;
 
-      // Try multiple ways to find an image
       const img =
         a.querySelector("img") ||
-        a.querySelector("picture img") ||
-        a.querySelector("[style*='background-image']");
-
-      let src =
-        img?.currentSrc ||
-        img?.src ||
-        img?.getAttribute?.("src") ||
-        img?.getAttribute?.("data-src");
-
-      if (!src && img?.style?.backgroundImage) {
-        src = img.style.backgroundImage.replace(/^url\\(["']?/, "").replace(/["']?\\)$/, "");
-      }
-
-      if (!src) continue;
-      seen.add(href);
-      out.push({ retailer: "hm", product_url: href, image_url: src });
-    }
-    return out;
-  });
-
-  results.push(...items);
-  return items.length;
-}
-
-// Next
-async function collectNext(page) {
-  const url = `https://www.next.co.uk/search?w=${encodeURIComponent(QUERY)}`;
-  await page.goto(url, { waitUntil: "domcontentloaded" });
-  await sleep(2000);
-  await autoScroll(page, 10);
-
-  const items = await page.$$eval("a[href]", (anchors) => {
-    const out = [];
-    const seen = new Set();
-    for (const a of anchors) {
-      const href = a.href;
-      if (!href || seen.has(href)) continue;
-      if (!href.includes("next.co.uk")) continue;
-
-      const img = a.querySelector("img") || a.querySelector("picture img");
-      const src =
-        img?.currentSrc ||
-        img?.src ||
-        img?.getAttribute?.("src") ||
-        img?.getAttribute?.("data-src");
-
-      if (!src) continue;
-      seen.add(href);
-      out.push({ retailer: "next", product_url: href, image_url: src });
-    }
-    return out;
-  });
-
-  results.push(...items);
-  return items.length;
-}
-
-async function main() {
-  ensureDirs();
-  const { chromium } = await import("playwright");
-
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
-  });
-
-  let hmCount = 0;
-  let nextCount = 0;
-
-  try {
-    hmCount = await collectHM(page);
-    await dumpDebug(page, `hm_${hmCount}`);
-  } catch (e) {
-    console.error("H&M failed:", e);
-    await dumpDebug(page, "hm_error");
-  }
-
-  try {
-    nextCount = await collectNext(page);
-    await dumpDebug(page, `next_${nextCount}`);
-  } catch (e) {
-    console.error("Next failed:", e);
-    await dumpDebug(page, "next_error");
-  }
-
-  await browser.close();
-
-  const final = dedupe(results);
-
-  fs.writeFileSync(OUT_PATH, JSON.stringify(final, null, 2), "utf-8");
-  console.log(`Wrote ${final.length} items (hm=${hmCount}, next=${nextCount}) to ${OUT_PATH}`);
-}
-
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+        a.querySelector("picture
