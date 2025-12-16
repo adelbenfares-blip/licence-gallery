@@ -28,6 +28,7 @@ jobs:
           node -v
           npm -v
 
+      # Self-contained install (does not rely on package-lock/package.json being correct)
       - name: Install Playwright (dependency)
         run: |
           npm init -y
