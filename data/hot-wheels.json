@@ -1,6 +1,61 @@
 [
   {
     "retailer": "hm",
+    "product_url": "https://www2.hm.com/es_mx/productpage.1117459043.html",
+    "image_url": "./images/hot-wheels/4673e11a5f701c6393cba86d37ef52d8ab046a4b.jpg"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/en_ca/productpage.1172232010.html",
+    "image_url": "./images/hot-wheels/91138d2cdd4cefa2d9f6766296d917b69263abd4.jpg"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/en_us/productpage.1016109014.html",
+    "image_url": "./images/hot-wheels/f6d083208ff0f55079464a500912b6c321f172c2.jpg"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/en_us/productpage.1063809047.html",
+    "image_url": "./images/hot-wheels/06c0b8d302fbcc2c9969a942ae758a07978d0b43.jpg"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/en_asia3/productpage.1212734001.html",
+    "image_url": "./images/hot-wheels/d645e88a02920a3638fc1fbfaa3f466a65fdb9e8.jpg"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/en_us/productpage.1207712002.html",
+    "image_url": "./images/hot-wheels/03e359cc09fe49f2f7d84f44d7957d8dab4ba196.jpg"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/en_us/productpage.1212734006.html",
+    "image_url": "./images/hot-wheels/620be3d8d937f342eb11ed54b8d520bcf3bab62f.jpg"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/en_us/productpage.1210905001.html",
+    "image_url": "./images/hot-wheels/ea79910fc25a92f17191d2a032004443ebebab40.jpg"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/en_ph/productpage.1117459030.html",
+    "image_url": "./images/hot-wheels/2c9b3f16cec04135b77b80a9ea7600c8618a3f95.jpg"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/de_at/productpage.1117472042.html",
+    "image_url": "./images/hot-wheels/535f07e725d244b646df90ac0c3136e0f79f36e9.jpg"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/es_mx/productpage.1118690033.html",
+    "image_url": "./images/hot-wheels/4b08d570c791e31b248a949d81739a47029629d6.jpg"
+  },
+  {
+    "retailer": "hm",
     "product_url": "https://www2.hm.com/el_gr/productpage.1232761014.html",
     "image_url": "./images/hot-wheels/081d3b029207bb8778d8554da1249319e02e8626.jpg"
   },
@@ -11,11 +66,6 @@
   },
   {
     "retailer": "hm",
-    "product_url": "https://www2.hm.com/es_mx/productpage.1118690033.html",
-    "image_url": "./images/hot-wheels/17d95607a640a687470c5efe9f4e8408c55d4dc0.jpg"
-  },
-  {
-    "retailer": "hm",
     "product_url": "https://www2.hm.com/es_mx/productpage.1027477030.html",
     "image_url": "./images/hot-wheels/9045b6309816b679380958386eb16357d0f99b86.jpg"
   },
@@ -23,5 +73,175 @@
     "retailer": "hm",
     "product_url": "https://www2.hm.com/en_hk/productpage.0963510002.html",
     "image_url": "./images/hot-wheels/615b4f1629c8e68b2a090d2a841cdab024bb27eb.jpg"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/en_gb/productpage.1296660001.html",
+    "image_url": "./images/hot-wheels/9c3985146c48aec039904ec4610bc2c68c647063.jpg"
+  },
+  {
+    "retailer": "pinterest",
+    "product_url": "https://in.pinterest.com/pin/hot-wheels-neons-boys-black-short-sleeved-tshirt-56--597219600615523255/",
+    "image_url": "./images/hot-wheels/8ed1e6187c94e36750b3c9eaba91dba94721e43a.jpg"
+  },
+  {
+    "retailer": "pinterest",
+    "product_url": "https://www.pinterest.com/pin/hot-wheels-tshirts-wcar-and-track-free-shipping--298785756529070501/",
+    "image_url": "./images/hot-wheels/66b0dafa357f321154f4dad02576e693b7196da8.jpg"
+  },
+  {
+    "retailer": "pinterest",
+    "product_url": "https://au.pinterest.com/pin/hot-wheels-tshirt-teesbuyscom--299067231516309214/",
+    "image_url": "./images/hot-wheels/5fc40d5455289db5d76dc591328a2a75b4b1a598.jpg"
+  },
+  {
+    "retailer": "pinterest",
+    "product_url": "https://www.pinterest.com/pin/hot-wheels-toddler-boys-3-pack-graphic-tshirts-grayblackred-2t--137289488886249168/",
+    "image_url": "./images/hot-wheels/7c78948718fcb354a0ee76ee6ba4363ba428d244.jpg"
+  },
+  {
+    "retailer": "pinterest",
+    "product_url": "https://www.pinterest.com/pin/hot-wheels-birthday-shirts-hot-wheels-theme-party-shirts-hot-wheels-family-shirt-all-sizes--386394843040982939/",
+    "image_url": "./images/hot-wheels/e2792ae513dfbfc5d602ac70486232b835c0ec45.jpg"
+  },
+  {
+    "retailer": "pinterest",
+    "product_url": "https://www.pinterest.com/pin/hot-wheels-graphic-tshirt-for-boys--762023199478289839/",
+    "image_url": "./images/hot-wheels/53502bb98f487ce34935239b5df99a10e2cc04ad.jpg"
+  },
+  {
+    "retailer": "next",
+    "product_url": "https://www.next.co.uk/style/su525741/e30204",
+    "image_url": "./images/hot-wheels/139c422042b46a46c42b1fdf76108f77c8a01446.jpg"
+  },
+  {
+    "retailer": "pinterest",
+    "product_url": "https://www.pinterest.com/pin/little-boys-size-6-hot-wheels-long-sleeve-tshirt--358247345371006343/",
+    "image_url": "./images/hot-wheels/9b4644e8c871a347c527a0e00dc1032d746afd9a.jpg"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/en_my/productpage.1325860001.html",
+    "image_url": "./images/hot-wheels/726cbaabbe6c7b1e5b518fa4206d6bea23b912b2.jpg"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/en_ca/productpage.1063809062.html",
+    "image_url": "./images/hot-wheels/8802f02be2a5c4630db2b472636613b222374f89.jpg"
+  },
+  {
+    "retailer": "next",
+    "product_url": "https://www.next.co.uk/style/su562552/ay5495",
+    "image_url": "./images/hot-wheels/1b4a8ea724fe8509b7fd36f5a0514bb9c98cae34.jpg"
+  },
+  {
+    "retailer": "next",
+    "product_url": "https://www.next.co.uk/style/su876796/y20588",
+    "image_url": "./images/hot-wheels/149570fde852d936e7ebcfc900f2b7e88ce37eb9.jpg"
+  },
+  {
+    "retailer": "pacsun",
+    "product_url": "https://www.pacsun.com/hot-wheels/front-runner-fleece-hoodie-0751484260518.html",
+    "image_url": "./images/hot-wheels/676cb6bca956c602b22f936dbad2e89d9ac1c8e3.jpg"
+  },
+  {
+    "retailer": "zara",
+    "product_url": "https://www.zara.com/ie/en/hot-wheels---mattel-car-hoodie-p00377566.html",
+    "image_url": "./images/hot-wheels/adfc4217b0632b9d35e683ba7e27d9fd0c2843a2.jpg"
+  },
+  {
+    "retailer": "pinterest",
+    "product_url": "https://www.pinterest.com/pin/kinder-hot-wheels-jungs-fast-viele-grenfarben-sweatshirt-inktee-store--774900679655296592/",
+    "image_url": "./images/hot-wheels/3303ceb7bf04327d597b4dd215e966ca666db977.jpg"
+  },
+  {
+    "retailer": "pinterest",
+    "product_url": "https://www.pinterest.com/pin/hot-wheels-hoodie--919719555127319298/",
+    "image_url": "./images/hot-wheels/833df5f0c18622ab5efae4df6e500d2660a15c54.jpg"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/es_mx/productpage.1162937013.html",
+    "image_url": "./images/hot-wheels/aac2cb1f3f7a8aa672f833865c5adb69ce193419.jpg"
+  },
+  {
+    "retailer": "pinterest",
+    "product_url": "https://it.pinterest.com/pin/cotton-rich-hot-wheels-sweatshirt-28-yrs--412079434673368779/",
+    "image_url": "./images/hot-wheels/cbdf0a1d373558d5ddc60be8f0b56155c47b178a.jpg"
+  },
+  {
+    "retailer": "pinterest",
+    "product_url": "https://www.pinterest.com/pin/extreme-racers-hot-wheels-sweatshirt-in-2025--133348838961363581/",
+    "image_url": "./images/hot-wheels/ac46adcbccce478729b8e2985bebafaf0c45e5a2.jpg"
+  },
+  {
+    "retailer": "pinterest",
+    "product_url": "https://www.pinterest.com/pin/hot-wheels-mattel-sweatshirt--802555596131331423/",
+    "image_url": "./images/hot-wheels/8708ad2755eb173b68b1d41f17b9c812be5d9f34.jpg"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/de_de/productpage.1152196006.html",
+    "image_url": "./images/hot-wheels/6b23bd3f294f5f680f3a4a8bc53ad72f31f2c51f.jpg"
+  },
+  {
+    "retailer": "pinterest",
+    "product_url": "https://www.pinterest.com/pin/boys-820-hot-wheels-speed-machine-fleece-sweatshirt-in-2025--138485757598736663/",
+    "image_url": "./images/hot-wheels/7c89c033bce2b53dadc03ba1ed5fb5443a446a38.jpg"
+  },
+  {
+    "retailer": "pinterest",
+    "product_url": "https://www.pinterest.com/pin/hot-wheels-mattel-sweatshirt-and-pants-plush-matching-set-in-2024--963348176531758974/",
+    "image_url": "./images/hot-wheels/90fa0e899e834ca502afebef01847ba42fcca8e8.jpg"
+  },
+  {
+    "retailer": "pinterest",
+    "product_url": "https://www.pinterest.com/pin/hot-wheels-mattel-joggers--332984966219712320/",
+    "image_url": "./images/hot-wheels/9ad83bd29ec799dbfe94f8fe69b99b8ad9ae54cc.jpg"
+  },
+  {
+    "retailer": "pinterest",
+    "product_url": "https://www.pinterest.com/pin/boys-412-jumping-beans-hot-wheels-fleece-sweatshirt--390968811413743909/",
+    "image_url": "./images/hot-wheels/4400c51857779779a2b9bbb3c4c084c10dcb5ab9.jpg"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/en_sg/productpage.1313580012.html",
+    "image_url": "./images/hot-wheels/54010492ef3e4443ea38aa3fed1aeacedc26fc28.jpg"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/en_in/productpage.1232761049.html",
+    "image_url": "./images/hot-wheels/dd3ef7b5e319083857f6907344da4a42c01f97c5.jpg"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/en_my/productpage.0619086067.html",
+    "image_url": "./images/hot-wheels/e76194db78eb803217cb26421ff15e77ef18ee64.jpg"
+  },
+  {
+    "retailer": "next",
+    "product_url": "https://www.next.co.uk/style/su762815/h54203",
+    "image_url": "./images/hot-wheels/ac75a59bca8b5e015684ff1d35f90c87d1f21b7e.jpg"
+  },
+  {
+    "retailer": "next",
+    "product_url": "https://www.next.co.uk/style/su472310/aj0465",
+    "image_url": "./images/hot-wheels/a7ae978c945a609cd3f2a6a0a4288587858618ad.jpg"
+  },
+  {
+    "retailer": "next",
+    "product_url": "https://www.next.co.uk/style/su590366/ar7180",
+    "image_url": "./images/hot-wheels/6513855c65910367ac9d4202ab59de7444304628.jpg"
+  },
+  {
+    "retailer": "next",
+    "product_url": "https://www.next.co.uk/style/su429283/ac1081",
+    "image_url": "./images/hot-wheels/efcbc7c04b5de83da8e2c692d6e62c3d978d85eb.jpg"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://th.hm.com/th_th/printed-pyjamas-0619086067011.html",
+    "image_url": "./images/hot-wheels/c6cd9001cb6a6c86c43b04658c2c370b2531a437.jpg"
   }
 ]
