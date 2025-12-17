@@ -1,6 +1,9 @@
 // collector/collect-hotwheels.mjs
-// Fail-soft collector: uses Bing RSS -> visits pages -> extracts og:image (best effort)
-// Writes data/hot-wheels.json + debug/* and NEVER crashes the workflow.
+// Fail-soft collector with HARD relevance filtering:
+// - Only keeps likely product pages per retailer (patterns)
+// - Requires page HTML to include "hot wheels" or "hotwheels"
+// - Requires an apparel keyword to reduce toy/news/logo spam
+// - Pinterest pins must contain hot wheels in page HTML
 
 import fs from "node:fs";
 import path from "node:path";
@@ -17,42 +20,110 @@ const PROCESSED_JSON = path.join(DEBUG_DIR, "processed.json");
 
 const LICENSE = "Hot Wheels";
 
-// Increase if you want more total results in the JSON
+// target more items if you want
 const MAX_ITEMS = 800;
 
-// Bing RSS returns 10 items/page typically; we paginate RSS by first=
-// Keep this sane to avoid long runs / throttling
-const RSS_PAGES_PER_QUERY = 6; // ~60 results/query
+// Bing RSS returns ~10 items/page; keep sane
+const RSS_PAGES_PER_QUERY = 8; // ~80 results/query
 
-// More query variety -> more results
+// strong apparel terms help Bing return actual clothing pages
 const QUERY_TEMPLATES = [
   `"${LICENSE}" kids hoodie`,
-  `"${LICENSE}" sweatshirt`,
-  `"${LICENSE}" t-shirt`,
-  `"${LICENSE}" tee`,
+  `"${LICENSE}" boys hoodie`,
+  `"${LICENSE}" kids sweatshirt`,
+  `"${LICENSE}" boys sweatshirt`,
+  `"${LICENSE}" kids t-shirt`,
+  `"${LICENSE}" boys t-shirt`,
   `"${LICENSE}" pyjamas`,
   `"${LICENSE}" pajamas`,
-  `"${LICENSE}" set`,
-  `"${LICENSE}" hat`,
+  `"${LICENSE}" clothing`,
+  `"${LICENSE}" apparel`,
   `"${LICENSE}" beanie`,
+  `"${LICENSE}" cap`,
+  `"${LICENSE}" jacket`,
+  `"${LICENSE}" set`,
 ];
 
+const APPAREL_KEYWORDS = [
+  "hoodie","sweatshirt","sweater","jumper","t-shirt","tshirt","tee",
+  "jogger","joggers","pants","trousers","shorts","leggings",
+  "pyjama","pyjamas","pajama","pajamas","onesie","romper",
+  "jacket","coat","beanie","hat","cap","socks","top","set",
+  "kids","boys","girls","infant","toddler"
+];
+
+// Retailers + URL patterns that look like product pages.
+// NOTE: add patterns over time as you discover real URL formats.
 const RETAILERS = [
-  { key: "zara", label: "Zara", domains: ["zara.com"] },
-  { key: "hm", label: "H&M", domains: ["hm.com", "www2.hm.com"] },
-  { key: "next", label: "Next", domains: ["next.co.uk", "xcdn.next.co.uk"] },
-  { key: "asos", label: "ASOS", domains: ["asos.com"] },
-  { key: "zalando", label: "Zalando", domains: ["zalando.co.uk", "zalando.com", "zalando.de", "zalando.fr", "zalando.nl", "zalando.it", "zalando.es", "zalando.be"] },
-  { key: "boxlunch", label: "BoxLunch", domains: ["boxlunch.com"] },
-  { key: "pacsun", label: "PacSun", domains: ["pacsun.com"] },
-  { key: "bucketsandspades", label: "Buckets & Spades", domains: ["bucketsandspades.co.uk", "bucketsandspades.com"] },
-  { key: "pinterest", label: "Pinterest", domains: ["pinterest.com", "pinimg.com"] },
+  {
+    key: "zara",
+    domains: ["zara.com"],
+    productUrlPatterns: [
+      /\/\d+\.html/i,              // common zara product ids
+      /\/product\//i
+    ]
+  },
+  {
+    key: "hm",
+    domains: ["hm.com", "www2.hm.com"],
+    productUrlPatterns: [
+      /\/productpage\.\d+/i
+    ]
+  },
+  {
+    key: "next",
+    domains: ["next.co.uk"],
+    productUrlPatterns: [
+      /\/style\/[a-z0-9]+\/[a-z0-9]+/i
+    ]
+  },
+  {
+    key: "asos",
+    domains: ["asos.com"],
+    productUrlPatterns: [
+      /\/prd\/\d+/i
+    ]
+  },
+  {
+    key: "zalando",
+    domains: ["zalando.co.uk","zalando.com","zalando.de","zalando.fr","zalando.nl","zalando.it","zalando.es","zalando.be"],
+    productUrlPatterns: [
+      /\/p\//i,                    // many zalando product urls
+      /\/t\//i
+    ]
+  },
+  {
+    key: "boxlunch",
+    domains: ["boxlunch.com"],
+    productUrlPatterns: [
+      /\/product\//i
+    ]
+  },
+  {
+    key: "pacsun",
+    domains: ["pacsun.com"],
+    productUrlPatterns: [
+      /\/product\//i
+    ]
+  },
+  {
+    key: "bucketsandspades",
+    domains: ["bucketsandspades.co.uk","bucketsandspades.com"],
+    productUrlPatterns: [
+      /\/products\//i
+    ]
+  },
+  {
+    key: "pinterest",
+    domains: ["pinterest.com"],
+    productUrlPatterns: [
+      /\/pin\//i
+    ]
+  },
 ];
 
 // ---------- utils ----------
-function ensureDir(p) {
-  fs.mkdirSync(p, { recursive: true });
-}
+function ensureDir(p) { fs.mkdirSync(p, { recursive: true }); }
 function log(line) {
   ensureDir(DEBUG_DIR);
   fs.appendFileSync(RUN_LOG, line + "\n");
@@ -66,7 +137,7 @@ function normUrl(u) {
   try {
     const url = new URL(u);
     url.hash = "";
-    // normalize tracking-ish query for image dedupe
+    // normalize common image params for dedupe
     if (url.searchParams.has("imwidth")) url.searchParams.delete("imwidth");
     if (url.searchParams.has("wid")) url.searchParams.delete("wid");
     if (url.searchParams.has("hei")) url.searchParams.delete("hei");
@@ -76,7 +147,6 @@ function normUrl(u) {
   }
 }
 function stripImageParams(u) {
-  // for stronger dedupe across CDNs
   try {
     const url = new URL(u);
     url.search = "";
@@ -89,21 +159,35 @@ function stripImageParams(u) {
 function domainOf(u) {
   try { return new URL(u).hostname.toLowerCase(); } catch { return ""; }
 }
-function matchesRetailer(url, retailer) {
+function matchesDomain(url, domains) {
   const d = domainOf(url);
-  return retailer.domains.some(dom => d === dom || d.endsWith("." + dom));
+  return domains.some(dom => d === dom || d.endsWith("." + dom));
 }
-function guessRetailerKeyFromUrl(url) {
+function retailerForUrl(url) {
   for (const r of RETAILERS) {
-    if (matchesRetailer(url, r)) return r.key;
+    if (matchesDomain(url, r.domains)) return r;
   }
-  return "other";
+  return null;
+}
+
+function isLikelyProductUrl(url, retailer) {
+  if (!retailer) return false;
+  return retailer.productUrlPatterns.some(rx => rx.test(url));
+}
+
+function textHasLicense(htmlOrText) {
+  const t = (htmlOrText || "").toLowerCase();
+  return t.includes("hot wheels") || t.includes("hotwheels");
+}
+
+function textHasApparel(htmlOrText) {
+  const t = (htmlOrText || "").toLowerCase();
+  return APPAREL_KEYWORDS.some(k => t.includes(k));
 }
 
 async function fetchText(url, opts = {}) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), opts.timeoutMs ?? 20000);
-
   try {
     const res = await fetch(url, {
       signal: controller.signal,
@@ -127,7 +211,6 @@ async function fetchText(url, opts = {}) {
 }
 
 function parseRssLinks(xml) {
-  // Minimal RSS parsing: pull <link>...</link> inside <item>
   const items = [];
   const itemBlocks = xml.split("<item>").slice(1);
   for (const block of itemBlocks) {
@@ -138,7 +221,6 @@ function parseRssLinks(xml) {
 }
 
 async function bingRssSearch(query, start = 1) {
-  // Bing RSS: q=...&first=...
   const q = encodeURIComponent(query);
   const url = `https://www.bing.com/search?q=${q}&format=rss&first=${start}`;
   const { ok, status, text, error } = await fetchText(url, { timeoutMs: 20000 });
@@ -150,71 +232,75 @@ async function bingRssSearch(query, start = 1) {
 }
 
 function extractOgImage(html) {
-  // og:image
   const og = html.match(/property=["']og:image["'][^>]*content=["']([^"']+)["']/i);
   if (og?.[1]) return og[1].trim();
-
-  // twitter:image
   const tw = html.match(/name=["']twitter:image["'][^>]*content=["']([^"']+)["']/i);
   if (tw?.[1]) return tw[1].trim();
-
   return "";
 }
 
-function extractFirstLikelyProductImage(html) {
-  // fallback: look for common CDN patterns
+function extractFirstLikelyImage(html, retailerKey) {
   const candidates = [];
 
-  // next.co.uk CDN
-  for (const m of html.matchAll(/https?:\/\/xcdn\.next\.co\.uk\/[^"' )]+?\.(?:jpg|jpeg|png)/gi)) {
-    candidates.push(m[0]);
+  // retailer-specific first
+  if (retailerKey === "next") {
+    for (const m of html.matchAll(/https?:\/\/xcdn\.next\.co\.uk\/[^"' )]+?\.(?:jpg|jpeg|png)/gi)) candidates.push(m[0]);
+  }
+  if (retailerKey === "hm") {
+    for (const m of html.matchAll(/https?:\/\/image\.hm\.com\/[^"' )]+?\.(?:jpg|jpeg|png)(?:\?[^"']*)?/gi)) candidates.push(m[0]);
+    for (const m of html.matchAll(/https?:\/\/lp2\.hm\.com\/hmgoepprod\?[^"']+/gi)) candidates.push(m[0]);
+  }
+  if (retailerKey === "pinterest") {
+    for (const m of html.matchAll(/https?:\/\/i\.pinimg\.com\/[^"' )]+?\.(?:jpg|jpeg|png)/gi)) candidates.push(m[0]);
   }
 
-  // hm image CDN
-  for (const m of html.matchAll(/https?:\/\/image\.hm\.com\/[^"' )]+?\.(?:jpg|jpeg|png)(?:\?[^"']*)?/gi)) {
-    candidates.push(m[0]);
-  }
-  for (const m of html.matchAll(/https?:\/\/lp2\.hm\.com\/hmgoepprod\?[^"']+/gi)) {
-    candidates.push(m[0]);
-  }
-
-  // pinimg
-  for (const m of html.matchAll(/https?:\/\/i\.pinimg\.com\/[^"' )]+?\.(?:jpg|jpeg|png)/gi)) {
-    candidates.push(m[0]);
-  }
-
-  // generic image-ish
+  // generic fallback
   for (const m of html.matchAll(/https?:\/\/[^"' )]+?\.(?:jpg|jpeg|png)(?:\?[^"']*)?/gi)) {
     const u = m[0];
     if (/sprite|icon|logo|favicon/i.test(u)) continue;
     candidates.push(u);
   }
-
   return candidates[0] || "";
 }
 
-async function getPageImage(url) {
-  const { ok, status, text, error } = await fetchText(url, { timeoutMs: 20000 });
-  if (!ok) return { image: "", status, error };
+async function getPageImageIfRelevant(productUrl, retailerKey) {
+  const { ok, status, text, error } = await fetchText(productUrl, { timeoutMs: 20000 });
+  if (!ok) return { image: "", status, error, relevant: false };
+
+  // HARD relevance: must mention Hot Wheels
+  const hasLicense = textHasLicense(text);
+
+  // apparel keyword requirement removes “hot” icon spam and toy pages
+  const hasApparel = textHasApparel(text);
+
+  // Pinterest is extremely noisy: require BOTH
+  if (retailerKey === "pinterest") {
+    if (!hasLicense) return { image: "", status, relevant: false };
+    // optional: keep pins even if apparel keyword missing IF license exists
+    // but usually better to require apparel too:
+    if (!hasApparel) return { image: "", status, relevant: false };
+  } else {
+    if (!hasLicense) return { image: "", status, relevant: false };
+    if (!hasApparel) return { image: "", status, relevant: false };
+  }
 
   const og = extractOgImage(text);
-  if (og) return { image: og, status };
+  if (og) return { image: og, status, relevant: true };
 
-  const fb = extractFirstLikelyProductImage(text);
-  return { image: fb || "", status };
+  const fb = extractFirstLikelyImage(text, retailerKey);
+  return { image: fb || "", status, relevant: true };
 }
 
 function dedupe(items) {
   const seen = new Set();
   const out = [];
-
   for (const it of items) {
     const product = normUrl(it.product_url || "");
     const img = normUrl(it.image_url || "");
-
     if (!product || !img) continue;
 
-    const key = `${product}::${stripImageParams(img)}`;
+    // dedupe by image (strong) + product (backup)
+    const key = `${stripImageParams(img)}::${product}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({ ...it, product_url: product, image_url: img });
@@ -227,114 +313,111 @@ async function main() {
   ensureDir(DEBUG_DIR);
   fs.writeFileSync(RUN_LOG, "", "utf8");
 
+  const processed = {
+    started_at: new Date().toISOString(),
+    notes: [],
+    queries: [],
+    totals: {
+      rss_links: 0,
+      considered_urls: 0,
+      skipped_not_product_url: 0,
+      skipped_not_relevant: 0,
+      blocked_or_failed: 0,
+      kept: 0
+    }
+  };
+
   log(`Collector started`);
   log(`License: ${LICENSE}`);
   log(`Max items: ${MAX_ITEMS}`);
 
   const found = [];
-  const processed = {
-    started_at: new Date().toISOString(),
-    queries: [],
-    notes: [],
-    totals: { links: 0, pages_ok: 0, pages_blocked: 0, items: 0 }
-  };
 
-  // Build queries per retailer domain + a general (no-domain) query
-  const retailerQueries = [];
+  // Build queries per retailer domain
+  const searchPlan = [];
   for (const r of RETAILERS) {
-    // Pinterest: allow broad to increase variety
     const dom = r.domains[0];
     for (const t of QUERY_TEMPLATES) {
-      retailerQueries.push({ retailer: r.key, query: `${t} site:${dom}` });
+      searchPlan.push({ retailer: r.key, query: `${t} site:${dom}` });
     }
   }
-  // General queries (other-domain fallback)
-  for (const t of QUERY_TEMPLATES) {
-    retailerQueries.push({ retailer: "other", query: t });
-  }
 
-  // Crawl RSS for each query (paged)
-  for (const q of retailerQueries) {
+  for (const q of searchPlan) {
     if (found.length >= MAX_ITEMS) break;
 
     log(`--- QUERY [${q.retailer}] ${q.query}`);
-    const qLog = { retailer: q.retailer, query: q.query, rss_pages: 0, links: 0, extracted: 0 };
+    const qLog = { retailer: q.retailer, query: q.query, rss_pages: 0, rss_links: 0, kept: 0 };
     processed.queries.push(qLog);
 
-    let allLinks = [];
+    let links = [];
     for (let p = 0; p < RSS_PAGES_PER_QUERY; p++) {
       const start = 1 + p * 10;
-      const links = await bingRssSearch(q.query, start);
+      const pageLinks = await bingRssSearch(q.query, start);
       qLog.rss_pages += 1;
-      qLog.links += links.length;
-      processed.totals.links += links.length;
-      allLinks = allLinks.concat(links);
+      qLog.rss_links += pageLinks.length;
+      processed.totals.rss_links += pageLinks.length;
+      links = links.concat(pageLinks);
 
-      // tiny pause
-      await new Promise(r => setTimeout(r, 350));
+      await new Promise(r => setTimeout(r, 300));
     }
 
-    // normalize & lightly filter obvious junk
-    allLinks = Array.from(new Set(allLinks.map(normUrl)))
-      .filter(u => u.startsWith("http"))
-      .filter(u => !u.includes("merriam-webster.com") && !u.includes("dictionary.") && !u.includes("wikipedia.org"));
+    // normalize & de-dupe links
+    links = Array.from(new Set(links.map(normUrl)))
+      .filter(u => u.startsWith("http"));
 
-    for (const link of allLinks) {
+    for (const url of links) {
       if (found.length >= MAX_ITEMS) break;
 
-      const retailerKey = q.retailer === "other" ? guessRetailerKeyFromUrl(link) : q.retailer;
+      processed.totals.considered_urls += 1;
 
-      // For "other" queries, only keep if it looks like one of our retailers (or pinterest).
-      if (q.retailer === "other") {
-        const ok = RETAILERS.some(r => matchesRetailer(link, r));
-        if (!ok) continue;
-      }
+      const retailer = retailerForUrl(url);
+      if (!retailer) continue;
 
-      const { image, status, error } = await getPageImage(link);
-
-      if (!image) {
-        if (status === 403 || status === 429) processed.totals.pages_blocked += 1;
+      // enforce product-url patterns
+      if (!isLikelyProductUrl(url, retailer)) {
+        processed.totals.skipped_not_product_url += 1;
         continue;
       }
 
-      processed.totals.pages_ok += 1;
+      const { image, status, relevant } = await getPageImageIfRelevant(url, retailer.key);
+      if (!relevant || !image) {
+        processed.totals.skipped_not_relevant += 1;
+        continue;
+      }
 
+      // normalize / keep
       found.push({
-        retailer: retailerKey,
-        product_url: link,
+        retailer: retailer.key,
+        product_url: url,
         image_url: image
       });
 
-      qLog.extracted += 1;
+      qLog.kept += 1;
+      processed.totals.kept += 1;
 
-      if (qLog.extracted % 10 === 0) {
-        log(`Extracted ${qLog.extracted} from this query... total=${found.length}`);
+      if (processed.totals.kept % 25 === 0) {
+        log(`Kept ${processed.totals.kept} items so far...`);
       }
 
-      // tiny pause to reduce blocks
       await new Promise(r => setTimeout(r, 250));
     }
   }
 
   const finalItems = dedupe(found).slice(0, MAX_ITEMS);
-  processed.totals.items = finalItems.length;
 
-  log(`Done. items=${finalItems.length}`);
+  log(`Done. kept=${finalItems.length}`);
   safeJsonWrite(OUT_JSON, finalItems);
   safeJsonWrite(PROCESSED_JSON, processed);
 
-  // Always succeed
   log(`Collector finished successfully (fail-soft).`);
 }
 
 main().catch((e) => {
-  // Even if something unexpected happens, write empty-but-valid output
   try {
     ensureDir(DEBUG_DIR);
     fs.appendFileSync(RUN_LOG, `\nFATAL (caught): ${String(e?.stack || e)}\n`);
     ensureDir(path.dirname(OUT_JSON));
     fs.writeFileSync(OUT_JSON, "[]", "utf8");
   } catch {}
-  // Never fail the workflow
-  process.exitCode = 0;
+  process.exitCode = 0; // never fail workflow
 });
