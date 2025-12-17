@@ -4,25 +4,23 @@ const OUT_PATH = "data/hot-wheels.json";
 const DEBUG_DIR = "debug";
 const MAX_ITEMS = 200;
 
-// We deliberately quote "Hot Wheels" and force apparel intent,
-// and we exclude common “dictionary/definition” noise.
+// Strong intent queries (quoted brand + apparel)
 const SOURCES = [
   {
-    name: "Retail apparel",
+    name: "Retailers",
     query:
-      `"Hot Wheels" kids clothing t-shirt hoodie sweatshirt joggers pyjamas ` +
-      `-dictionary -definition -meaning -merriam -cambridge -wordreference -wikipedia`,
-    tag: "retailer",
+      `"Hot Wheels" kids (t-shirt OR tee OR hoodie OR sweatshirt OR joggers OR pyjamas) ` +
+      `site:next.co.uk OR site:hm.com OR site:zara.com OR site:asos.com OR site:zalando.co.uk`,
+    tag: "retail",
   },
   {
-    name: "Pinterest discovery",
-    query: `"Hot Wheels" kids clothing t-shirt hoodie site:pinterest.com`,
+    name: "Pinterest",
+    query: `"Hot Wheels" kids (t-shirt OR tee OR hoodie OR sweatshirt OR joggers) site:pinterest.com`,
     tag: "pinterest",
   },
 ];
 
-// Domains we allow into the gallery.
-// Add more retailers here as you expand.
+// Only include items where the *click-through URL* is one of these domains
 const ALLOWED_RETAILER_MATCH = [
   { key: "next", match: ["next.co.uk"] },
   { key: "hm", match: ["hm.com", "www2.hm.com"] },
@@ -30,17 +28,6 @@ const ALLOWED_RETAILER_MATCH = [
   { key: "asos", match: ["asos.com"] },
   { key: "zalando", match: ["zalando.co.uk", "zalando.com"] },
   { key: "pinterest", match: ["pinterest.com", "pinterest.co.uk", "pinterest.fr"] },
-];
-
-// Optional global blocklist to avoid obvious non-product pages
-const URL_BLOCKLIST_SUBSTR = [
-  "dictionary",
-  "definition",
-  "wordreference",
-  "merriam-webster",
-  "cambridge.org/dictionary",
-  "thefreedictionary",
-  "wikipedia.org",
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -64,65 +51,30 @@ function writeDebugFile(name, content) {
   fs.writeFileSync(`${DEBUG_DIR}/${name}`, content, "utf-8");
 }
 
-function dedupe(list) {
-  const map = new Map();
-  for (const item of list) {
-    if (!item?.image_url || !item?.product_url || !item?.retailer) continue;
-    map.set(`${item.retailer}::${item.product_url}`, item);
-  }
-  return Array.from(map.values());
+function decodeXml(s) {
+  return (s || "")
+    .replaceAll("&amp;", "&")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&#39;", "'");
 }
 
 function normalizeRetailer(url) {
-  const u = url.toLowerCase();
-
+  const u = (url || "").toLowerCase();
   for (const r of ALLOWED_RETAILER_MATCH) {
     if (r.match.some((m) => u.includes(m))) return r.key;
   }
-  return null; // IMPORTANT: unknown domains are dropped
+  return null; // unknown domains dropped
 }
 
-function isBlockedUrl(url) {
-  const u = url.toLowerCase();
-  return URL_BLOCKLIST_SUBSTR.some((bad) => u.includes(bad));
-}
-
-function extractMeta(html, propertyOrName) {
-  const reProp = new RegExp(
-    `<meta[^>]+property=["']${propertyOrName}["'][^>]+content=["']([^"']+)["']`,
-    "i"
-  );
-  const m1 = html.match(reProp);
-  if (m1?.[1]) return m1[1];
-
-  const reName = new RegExp(
-    `<meta[^>]+name=["']${propertyOrName}["'][^>]+content=["']([^"']+)["']`,
-    "i"
-  );
-  const m2 = html.match(reName);
-  if (m2?.[1]) return m2[1];
-
-  return null;
-}
-
-function extractTitle(html) {
-  const m = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-  return m ? m[1].trim() : "";
-}
-
-function parseBingRssLinks(xml) {
-  const links = [];
-  const itemRe = /<item\b[\s\S]*?<\/item>/gi;
-  const linkRe = /<link>([\s\S]*?)<\/link>/i;
-
-  const items = xml.match(itemRe) || [];
-  for (const item of items) {
-    const lm = item.match(linkRe);
-    if (!lm) continue;
-    const url = lm[1].trim();
-    if (url.startsWith("http")) links.push(url);
+function dedupe(list) {
+  const map = new Map();
+  for (const item of list) {
+    if (!item?.retailer || !item?.product_url || !item?.image_url) continue;
+    map.set(`${item.retailer}::${item.product_url}`, item);
   }
-  return Array.from(new Set(links));
+  return Array.from(map.values());
 }
 
 async function fetchText(url) {
@@ -131,8 +83,7 @@ async function fetchText(url) {
     headers: {
       "user-agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
-      accept:
-        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      accept: "application/rss+xml, application/xml, text/xml, text/html;q=0.9, */*;q=0.8",
       "accept-language": "en-GB,en;q=0.9",
     },
   });
@@ -141,102 +92,129 @@ async function fetchText(url) {
   return { status: res.status, text };
 }
 
-async function collectFromBingRss(query, label) {
-  const rssUrl = `https://www.bing.com/search?q=${encodeURIComponent(
-    query
-  )}&format=rss`;
-
-  logDebug(`BING(${label}) RSS: ${rssUrl}`);
-
-  const { status, text: rss } = await fetchText(rssUrl);
-  logDebug(`BING(${label}) RSS status: ${status}`);
-
-  // keep a copy for debugging
-  writeDebugFile(`bing_${label}.xml`, rss.slice(0, 250000));
-
-  return parseBingRssLinks(rss);
+function extractBetween(s, startTag, endTag) {
+  const start = s.indexOf(startTag);
+  if (start === -1) return null;
+  const end = s.indexOf(endTag, start + startTag.length);
+  if (end === -1) return null;
+  return s.slice(start + startTag.length, end);
 }
 
-async function resolveUrlToImage(url) {
-  const { status, text: html } = await fetchText(url);
+function extractAttr(tagText, attrName) {
+  // attrName="value" or attrName='value'
+  const re = new RegExp(`${attrName}=["']([^"']+)["']`, "i");
+  const m = tagText.match(re);
+  return m?.[1] ? decodeXml(m[1]) : null;
+}
 
-  const ogImage =
-    extractMeta(html, "og:image") ||
-    extractMeta(html, "twitter:image") ||
-    extractMeta(html, "image");
+function parseBingRssItems(xml) {
+  const items = [];
+  const itemRe = /<item\b[\s\S]*?<\/item>/gi;
+  const all = xml.match(itemRe) || [];
 
-  const title = extractTitle(html);
+  for (const itemXml of all) {
+    const linkRaw = extractBetween(itemXml, "<link>", "</link>");
+    const product_url = linkRaw ? decodeXml(linkRaw.trim()) : null;
 
-  return { status, ogImage, title };
+    // Try media:thumbnail first
+    let image_url = null;
+
+    const thumbTag = itemXml.match(/<media:thumbnail\b[^>]*>/i)?.[0];
+    if (thumbTag) image_url = extractAttr(thumbTag, "url");
+
+    // Try media:content
+    if (!image_url) {
+      const contentTag = itemXml.match(/<media:content\b[^>]*>/i)?.[0];
+      if (contentTag) image_url = extractAttr(contentTag, "url");
+    }
+
+    // Try enclosure url=""
+    if (!image_url) {
+      const encTag = itemXml.match(/<enclosure\b[^>]*>/i)?.[0];
+      if (encTag) image_url = extractAttr(encTag, "url");
+    }
+
+    // Try <description> containing <img src="...">
+    if (!image_url) {
+      const desc = extractBetween(itemXml, "<description>", "</description>");
+      if (desc) {
+        const m = decodeXml(desc).match(/<img[^>]+src=["']([^"']+)["']/i);
+        if (m?.[1]) image_url = m[1];
+      }
+    }
+
+    if (product_url && image_url) {
+      items.push({ product_url, image_url });
+    }
+  }
+
+  return items;
+}
+
+async function collectFromBingRss(query, label) {
+  const rssUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&format=rss`;
+  logDebug(`BING(${label}) RSS: ${rssUrl}`);
+
+  const { status, text } = await fetchText(rssUrl);
+  logDebug(`BING(${label}) status: ${status}`);
+
+  writeDebugFile(`bing_${label}.xml`, text.slice(0, 250000));
+  return parseBingRssItems(text);
 }
 
 async function main() {
   ensureDirs();
   fs.writeFileSync(`${DEBUG_DIR}/run.txt`, "", "utf-8");
-  logDebug("Feed-based collector starting");
+  logDebug("RSS-image collector starting");
 
   const collected = [];
-  const processedLog = [];
+  const processed = [];
 
-  // 1) Get candidate URLs from Bing RSS
-  let candidateUrls = [];
   for (const src of SOURCES) {
+    let rssItems = [];
     try {
-      const urls = await collectFromBingRss(src.query, src.tag);
-      candidateUrls.push(...urls);
-      logDebug(`Source "${src.name}" URLs: ${urls.length}`);
+      rssItems = await collectFromBingRss(src.query, src.tag);
+      logDebug(`Source "${src.name}" rss items with images: ${rssItems.length}`);
     } catch (e) {
       logDebug(`Source "${src.name}" ERROR: ${String(e)}`);
-    }
-  }
-
-  candidateUrls = Array.from(new Set(candidateUrls)).filter(
-    (u) => !isBlockedUrl(u)
-  );
-
-  // 2) Resolve each URL to og:image
-  const maxToProcess = Math.min(candidateUrls.length, 350);
-
-  for (let i = 0; i < maxToProcess; i++) {
-    const url = candidateUrls[i];
-
-    const retailer = normalizeRetailer(url);
-    if (!retailer) {
-      // Drop unknown domains entirely (prevents dictionary/random sites)
-      processedLog.push({ url, retailer: null, status: "SKIP_DOMAIN", hasImage: false });
       continue;
     }
 
-    try {
-      const { status, ogImage, title } = await resolveUrlToImage(url);
+    for (const it of rssItems) {
+      const retailer = normalizeRetailer(it.product_url);
+      if (!retailer) {
+        processed.push({
+          product_url: it.product_url,
+          image_url: it.image_url,
+          retailer: null,
+          action: "SKIP_DOMAIN",
+        });
+        continue;
+      }
 
-      const hasImage = !!ogImage;
-      processedLog.push({
-        url,
+      collected.push({
         retailer,
-        status,
-        hasImage,
-        title: title.slice(0, 120),
+        product_url: it.product_url,
+        image_url: it.image_url,
       });
 
-      if (ogImage) {
-        collected.push({
-          retailer,
-          product_url: url,
-          image_url: ogImage,
-        });
-      }
-    } catch (e) {
-      processedLog.push({ url, retailer, status: "ERR", hasImage: false });
+      processed.push({
+        product_url: it.product_url,
+        image_url: it.image_url,
+        retailer,
+        action: "ADD",
+      });
+
+      if (collected.length >= MAX_ITEMS) break;
     }
 
-    // small delay reduces rate-limits
-    await sleep(200);
-
     if (collected.length >= MAX_ITEMS) break;
+
+    // tiny delay between sources
+    await sleep(200);
   }
 
-  writeDebugFile("processed.json", JSON.stringify(processedLog, null, 2));
+  writeDebugFile("processed.json", JSON.stringify(processed.slice(0, 500), null, 2));
 
   const final = dedupe(collected).slice(0, MAX_ITEMS);
   fs.writeFileSync(OUT_PATH, JSON.stringify(final, null, 2), "utf-8");
