@@ -4,23 +4,16 @@ const OUT_PATH = "data/hot-wheels.json";
 const DEBUG_DIR = "debug";
 const MAX_ITEMS = 200;
 
-// Strong intent queries (quoted brand + apparel)
+// IMPORTANT: Bing RSS is picky. Keep queries SIMPLE (one site per query).
 const SOURCES = [
-  {
-    name: "Retailers",
-    query:
-      `"Hot Wheels" kids (t-shirt OR tee OR hoodie OR sweatshirt OR joggers OR pyjamas) ` +
-      `site:next.co.uk OR site:hm.com OR site:zara.com OR site:asos.com OR site:zalando.co.uk`,
-    tag: "retail",
-  },
-  {
-    name: "Pinterest",
-    query: `"Hot Wheels" kids (t-shirt OR tee OR hoodie OR sweatshirt OR joggers) site:pinterest.com`,
-    tag: "pinterest",
-  },
+  { name: "Next", query: `"Hot Wheels" site:next.co.uk`, tag: "next" },
+  { name: "H&M", query: `"Hot Wheels" site:hm.com`, tag: "hm" },
+  { name: "Zara", query: `"Hot Wheels" site:zara.com`, tag: "zara" },
+  { name: "ASOS", query: `"Hot Wheels" site:asos.com`, tag: "asos" },
+  { name: "Zalando", query: `"Hot Wheels" site:zalando.co.uk`, tag: "zalando" },
+  { name: "Pinterest", query: `"Hot Wheels" site:pinterest.com`, tag: "pinterest" },
 ];
 
-// Only include items where the *click-through URL* is one of these domains
 const ALLOWED_RETAILER_MATCH = [
   { key: "next", match: ["next.co.uk"] },
   { key: "hm", match: ["hm.com", "www2.hm.com"] },
@@ -65,10 +58,11 @@ function normalizeRetailer(url) {
   for (const r of ALLOWED_RETAILER_MATCH) {
     if (r.match.some((m) => u.includes(m))) return r.key;
   }
-  return null; // unknown domains dropped
+  return null;
 }
 
 function dedupe(list) {
+  // Dedupe by (retailer + product_url)
   const map = new Map();
   for (const item of list) {
     if (!item?.retailer || !item?.product_url || !item?.image_url) continue;
@@ -101,13 +95,13 @@ function extractBetween(s, startTag, endTag) {
 }
 
 function extractAttr(tagText, attrName) {
-  // attrName="value" or attrName='value'
   const re = new RegExp(`${attrName}=["']([^"']+)["']`, "i");
   const m = tagText.match(re);
   return m?.[1] ? decodeXml(m[1]) : null;
 }
 
 function parseBingRssItems(xml) {
+  // Return [{ product_url, image_url }]
   const items = [];
   const itemRe = /<item\b[\s\S]*?<\/item>/gi;
   const all = xml.match(itemRe) || [];
@@ -116,25 +110,25 @@ function parseBingRssItems(xml) {
     const linkRaw = extractBetween(itemXml, "<link>", "</link>");
     const product_url = linkRaw ? decodeXml(linkRaw.trim()) : null;
 
-    // Try media:thumbnail first
     let image_url = null;
 
+    // 1) <media:thumbnail url="..."/>
     const thumbTag = itemXml.match(/<media:thumbnail\b[^>]*>/i)?.[0];
     if (thumbTag) image_url = extractAttr(thumbTag, "url");
 
-    // Try media:content
+    // 2) <media:content url="..."/>
     if (!image_url) {
       const contentTag = itemXml.match(/<media:content\b[^>]*>/i)?.[0];
       if (contentTag) image_url = extractAttr(contentTag, "url");
     }
 
-    // Try enclosure url=""
+    // 3) <enclosure url="..."/>
     if (!image_url) {
       const encTag = itemXml.match(/<enclosure\b[^>]*>/i)?.[0];
       if (encTag) image_url = extractAttr(encTag, "url");
     }
 
-    // Try <description> containing <img src="...">
+    // 4) <description> ... <img src="...">
     if (!image_url) {
       const desc = extractBetween(itemXml, "<description>", "</description>");
       if (desc) {
@@ -158,7 +152,9 @@ async function collectFromBingRss(query, label) {
   const { status, text } = await fetchText(rssUrl);
   logDebug(`BING(${label}) status: ${status}`);
 
+  // Keep full-ish RSS for debugging
   writeDebugFile(`bing_${label}.xml`, text.slice(0, 250000));
+
   return parseBingRssItems(text);
 }
 
@@ -174,7 +170,7 @@ async function main() {
     let rssItems = [];
     try {
       rssItems = await collectFromBingRss(src.query, src.tag);
-      logDebug(`Source "${src.name}" rss items with images: ${rssItems.length}`);
+      logDebug(`Source "${src.name}" items (link+image): ${rssItems.length}`);
     } catch (e) {
       logDebug(`Source "${src.name}" ERROR: ${String(e)}`);
       continue;
@@ -182,6 +178,7 @@ async function main() {
 
     for (const it of rssItems) {
       const retailer = normalizeRetailer(it.product_url);
+
       if (!retailer) {
         processed.push({
           product_url: it.product_url,
@@ -210,11 +207,10 @@ async function main() {
 
     if (collected.length >= MAX_ITEMS) break;
 
-    // tiny delay between sources
-    await sleep(200);
+    await sleep(150);
   }
 
-  writeDebugFile("processed.json", JSON.stringify(processed.slice(0, 500), null, 2));
+  writeDebugFile("processed.json", JSON.stringify(processed, null, 2));
 
   const final = dedupe(collected).slice(0, MAX_ITEMS);
   fs.writeFileSync(OUT_PATH, JSON.stringify(final, null, 2), "utf-8");
