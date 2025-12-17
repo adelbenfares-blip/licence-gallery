@@ -11,6 +11,7 @@
     @media (min-width: 640px){ .grid{ grid-template-columns: repeat(3, 1fr);} }
     @media (min-width: 900px){ .grid{ grid-template-columns: repeat(5, 1fr);} }
     @media (min-width: 1200px){ .grid{ grid-template-columns: repeat(7, 1fr);} }
+
     a.tile { display:block; border-radius:12px; overflow:hidden; background:#f2f2f2; }
     img { width:100%; height:auto; aspect-ratio: 3/4; object-fit: cover; display:block; }
     .pager { display:flex; gap:10px; align-items:center; margin-top: 12px; flex-wrap:wrap; }
@@ -25,12 +26,7 @@
     <strong id="title">HOT WHEELS</strong>
     <span class="muted" id="count"></span>
     <label class="muted">Retailer:</label>
-    <select id="retailer">
-      <option value="all">All</option>
-      <option value="zara">Zara</option>
-      <option value="hm">H&amp;M</option>
-      <option value="next">Next</option>
-    </select>
+    <select id="retailer"></select>
   </header>
 
   <div class="grid" id="grid"></div>
@@ -43,8 +39,10 @@
 
   <script>
     const PAGE_SIZE = 200;
+
     const params = new URLSearchParams(location.search);
-    const page = Math.max(1, parseInt(params.get("page") || "1", 10));
+    const pageParam = Math.max(1, parseInt(params.get("page") || "1", 10));
+    const retailerParam = (params.get("retailer") || "all").toLowerCase();
 
     const gridEl = document.getElementById("grid");
     const countEl = document.getElementById("count");
@@ -52,6 +50,10 @@
     const prevBtn = document.getElementById("prev");
     const nextBtn = document.getElementById("next");
     const retailerSel = document.getElementById("retailer");
+
+    // Ensures paths work on GitHub Pages whether you're at /licence-gallery/ or /licence-gallery/?page=1
+    const BASE_PATH = location.pathname.endsWith("/") ? location.pathname : (location.pathname + "/");
+    const DATA_URL = new URL("data/hot-wheels.json", location.origin + BASE_PATH).toString();
 
     function setUrl(newPage, retailer) {
       const p = new URLSearchParams(location.search);
@@ -61,21 +63,80 @@
       location.search = p.toString();
     }
 
-    (async function init(){
-      const retailerParam = params.get("retailer") || "all";
-      retailerSel.value = retailerParam;
-      retailerSel.addEventListener("change", () => setUrl(1, retailerSel.value));
+    function prettyRetailer(key) {
+      const k = (key || "").toLowerCase();
+      if (k === "hm") return "H&M";
+      if (k === "bucketsandspades") return "Buckets & Spades";
+      if (k === "boxlunch") return "BoxLunch";
+      if (k === "pacsun") return "PacSun";
+      if (k === "asos") return "ASOS";
+      if (k === "other") return "Other";
+      // Title case fallback
+      return k ? (k.charAt(0).toUpperCase() + k.slice(1)) : "Unknown";
+    }
 
-      const res = await fetch("data/hot-wheels.json", { cache: "no-store" });
+    function buildRetailerOptions(allItems) {
+      const set = new Set();
+      for (const x of allItems) {
+        const r = (x.retailer || "").toLowerCase().trim();
+        if (r) set.add(r);
+      }
+
+      // Sort: known names first, then rest alphabetically, but keep "other" last
+      const arr = Array.from(set).sort((a, b) => a.localeCompare(b));
+      const withoutOther = arr.filter(x => x !== "other");
+      const hasOther = arr.includes("other");
+
+      const ordered = [
+        ...withoutOther,
+        ...(hasOther ? ["other"] : [])
+      ];
+
+      retailerSel.innerHTML = "";
+      const optAll = document.createElement("option");
+      optAll.value = "all";
+      optAll.textContent = "All";
+      retailerSel.appendChild(optAll);
+
+      for (const r of ordered) {
+        const opt = document.createElement("option");
+        opt.value = r;
+        opt.textContent = prettyRetailer(r);
+        retailerSel.appendChild(opt);
+      }
+    }
+
+    function resolveImageUrl(imageUrl) {
+      // If collector writes local paths like "images/hot-wheels/xxx.jpg", make them absolute to the project base
+      if (!imageUrl) return "";
+      const s = String(imageUrl);
+
+      // Already absolute
+      if (s.startsWith("http://") || s.startsWith("https://") || s.startsWith("data:")) return s;
+
+      // Make relative to site base
+      return new URL(s.replace(/^\//, ""), location.origin + BASE_PATH).toString();
+    }
+
+    (async function init() {
+      const res = await fetch(DATA_URL, { cache: "no-store" });
       const all = await res.json();
 
-      const filtered = retailerParam === "all"
+      buildRetailerOptions(all);
+
+      // keep valid selection
+      const hasParam = Array.from(retailerSel.options).some(o => o.value === retailerParam);
+      retailerSel.value = hasParam ? retailerParam : "all";
+
+      retailerSel.addEventListener("change", () => setUrl(1, retailerSel.value));
+
+      const filtered = (retailerSel.value === "all")
         ? all
-        : all.filter(x => (x.retailer || "").toLowerCase() === retailerParam);
+        : all.filter(x => (x.retailer || "").toLowerCase() === retailerSel.value);
 
       const total = filtered.length;
       const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-      const currentPage = Math.min(page, totalPages);
+      const currentPage = Math.min(pageParam, totalPages);
 
       const start = (currentPage - 1) * PAGE_SIZE;
       const items = filtered.slice(start, start + PAGE_SIZE);
@@ -90,21 +151,34 @@
       nextBtn.onclick = () => setUrl(currentPage + 1, retailerSel.value);
 
       gridEl.innerHTML = "";
+
       for (const p of items) {
         const a = document.createElement("a");
         a.className = "tile";
-        a.href = p.product_url;
+        a.href = p.product_url || "#";
         a.target = "_blank";
         a.rel = "noreferrer";
 
         const img = document.createElement("img");
         img.loading = "lazy";
         img.alt = "";
-        img.src = p.image_url;
+
+        // Remove tiles that fail to load (fixes “blank card” issue)
+        img.onerror = () => {
+          a.remove();
+          // update count label to reflect visible items on page
+          const remaining = gridEl.querySelectorAll("a.tile").length;
+          pageInfoEl.textContent = `Page ${currentPage} of ${totalPages} • showing ${remaining}/${items.length}`;
+        };
+
+        img.src = resolveImageUrl(p.image_url);
 
         a.appendChild(img);
         gridEl.appendChild(a);
       }
+
+      // initial visible count
+      pageInfoEl.textContent = `Page ${currentPage} of ${totalPages} • showing ${items.length}/${items.length}`;
     })();
   </script>
 </body>
