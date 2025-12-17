@@ -10,33 +10,51 @@ const DEBUG_DIR = "debug";
 
 const MAX_ITEMS = 200;
 
-// Pull a lot more candidates, then dedupe down
-const MAX_CANDIDATES = 4000;
+// Bing paging (more depth = more coverage)
+const PAGES_PER_QUERY = 28;
+const COUNT_PER_PAGE = 50;
 
-// Bing paging
-const PAGES_PER_QUERY = 18; // deeper = more results
-const COUNT_PER_PAGE = 50;  // max Bing will usually accept
+// Cap per retailer so "other" / Pinterest doesn't dominate
+const PER_RETAILER_CAP = {
+  other: 140,
+  pinterest: 60,
+  zara: 120,
+  hm: 120,
+  next: 120,
+  asos: 120,
+  zalando: 120,
+  boxlunch: 120,
+  pacsun: 120,
+  bucketsandspades: 120,
+};
 
+// Known retailers (classification)
 const RETAILERS = [
   { key: "zara", match: ["zara.com"] },
-  { key: "hm", match: ["hm.com", "www2.hm.com"] },
-  { key: "next", match: ["next.co.uk"] },
+  { key: "hm", match: ["hm.com", "www2.hm.com", "lp2.hm.com", "image.hm.com"] },
+  { key: "next", match: ["next.co.uk", "xcdn.next.co.uk"] },
   { key: "asos", match: ["asos.com"] },
   { key: "zalando", match: ["zalando.co.uk", "zalando.com"] },
-  { key: "pinterest", match: ["pinterest.com", "pinterest.co.uk", "pinterest.fr"] },
+  { key: "pinterest", match: ["pinterest.com", "pinimg.com"] },
   { key: "boxlunch", match: ["boxlunch.com"] },
   { key: "pacsun", match: ["pacsun.com"] },
   { key: "bucketsandspades", match: ["bucketsandspades.com.au"] },
 ];
 
-// More query variants = more coverage
-const QUERIES = [
-  `"${BRAND}" kids clothing`,
-  `"${BRAND}" t-shirt kids`,
-  `"${BRAND}" hoodie kids`,
-  `"${BRAND}" sweatshirt kids`,
-  `"${BRAND}" pyjamas kids`,
+// Apparel intent keywords (for OTHER-domain filtering)
+const APPAREL_TERMS = [
+  "tshirt", "t-shirt", "tee", "shirt", "top",
+  "hoodie", "sweatshirt", "jumper", "sweater",
+  "jogger", "joggers", "tracksuit", "set",
+  "pyjama", "pyjamas", "pajama", "pajamas",
+  "jacket", "coat", "pants", "trousers", "shorts",
+  "cap", "hat", "beanie",
+  "kids", "boy", "boys", "girl", "girls", "toddler", "baby"
+];
 
+// Queries: retailer-specific + broad apparel intent
+const QUERIES = [
+  // retailer constrained
   `"${BRAND}" site:next.co.uk`,
   `"${BRAND}" site:hm.com`,
   `"${BRAND}" site:zara.com`,
@@ -46,6 +64,21 @@ const QUERIES = [
   `"${BRAND}" site:pacsun.com`,
   `"${BRAND}" site:bucketsandspades.com.au`,
   `"${BRAND}" kids site:pinterest.com`,
+
+  // broad but still apparel intent
+  `"${BRAND}" kids hoodie`,
+  `"${BRAND}" kids sweatshirt`,
+  `"${BRAND}" kids t-shirt`,
+  `"${BRAND}" boys hoodie`,
+  `"${BRAND}" boys sweatshirt`,
+  `"${BRAND}" boys t-shirt`,
+  `"${BRAND}" girls hoodie`,
+  `"${BRAND}" girls sweatshirt`,
+  `"${BRAND}" girls t-shirt`,
+  `"${BRAND}" pyjamas`,
+  `"${BRAND}" joggers`,
+  `"${BRAND}" tracksuit`,
+  `"${BRAND}" beanie`,
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -77,14 +110,6 @@ function htmlUnescape(s) {
     .replaceAll("&#39;", "'");
 }
 
-function normalizeRetailer(url) {
-  const u = (url || "").toLowerCase();
-  for (const r of RETAILERS) {
-    if (r.match.some((m) => u.includes(m))) return r.key;
-  }
-  return null;
-}
-
 function stripQueryHash(url) {
   try {
     const u = new URL(url);
@@ -96,13 +121,55 @@ function stripQueryHash(url) {
   }
 }
 
-// Pinterest is noisy, so keep it strict. Real retailers: accept if domain matches.
+function normalizeRetailer(url) {
+  const u = (url || "").toLowerCase();
+  for (const r of RETAILERS) {
+    if (r.match.some((m) => u.includes(m))) return r.key;
+  }
+  return "other"; // FALLBACK
+}
+
+function containsAny(haystack, needles) {
+  const s = (haystack || "").toLowerCase();
+  return needles.some((n) => s.includes(n));
+}
+
+// Keep Pinterest strict so it doesn't turn into random aesthetics
 function pinterestLooksRelevant(productUrl, imageUrl) {
   const s = `${productUrl} ${imageUrl}`.toLowerCase();
   const hasBrand =
     s.includes("hot-wheels") || s.includes("hotwheels") || (s.includes("hot") && s.includes("wheels"));
-  const apparelHints = ["tshirt","t-shirt","tee","hoodie","sweatshirt","jumper","jogger","joggers","pyjama","pajama","shirt","top","set"];
-  return hasBrand && apparelHints.some((k) => s.includes(k));
+  return hasBrand && containsAny(s, APPAREL_TERMS);
+}
+
+// Filter OTHER so we don’t ingest dictionary pages, logos, etc.
+function otherLooksRelevant(productUrl, imageUrl) {
+  const s = `${productUrl} ${imageUrl}`.toLowerCase();
+  const hasBrand =
+    s.includes("hot-wheels") || s.includes("hotwheels") || (s.includes("hot") && s.includes("wheels"));
+
+  // must show apparel intent OR common ecommerce patterns
+  const apparelIntent = containsAny(s, APPAREL_TERMS);
+  const ecommerceHints = containsAny(s, [
+    "/product", "/products", "product", "sku", "style", "item", "pid", "variant",
+    "shop", "store", "cart"
+  ]);
+
+  // avoid obvious junk sources
+  const junk = containsAny(s, [
+    "wikipedia.org",
+    "merriam-webster.com",
+    "dictionary.",
+    "cambridge.org/dictionary",
+    "thefreedictionary.com",
+    "wordreference.com",
+    "fandom.com/wiki",
+    "logo",
+    "vector",
+    "svg"
+  ]);
+
+  return hasBrand && (apparelIntent || ecommerceHints) && !junk;
 }
 
 function styleKey(retailer, productUrl) {
@@ -137,9 +204,10 @@ function styleKey(retailer, productUrl) {
     if (m?.[1]) return `pinterest:${m[1]}`;
   }
 
+  // other: bucket by hostname+path
   try {
     const urlObj = new URL(u);
-    return `${retailer}:${urlObj.pathname.toLowerCase()}`;
+    return `${retailer}:${urlObj.hostname}${urlObj.pathname}`.toLowerCase();
   } catch {
     return `${retailer}:${u.toLowerCase()}`;
   }
@@ -153,7 +221,7 @@ function imageScore(imageUrl) {
   if (s.includes("1260") || s.includes("imwidth=1260")) score += 2;
   if (s.includes("750") || s.includes("width=750")) score += 1;
   if (s.includes("thumb") || s.includes("thumbnail")) score -= 2;
-  if (s.endsWith(".jpg") || s.includes(".jpg?") || s.endsWith(".png") || s.includes(".png?")) score += 1;
+  if (s.endsWith(".jpg") || s.includes(".jpg?") || s.endsWith(".png") || s.includes(".png?") || s.includes("webp")) score += 1;
   return score;
 }
 
@@ -188,45 +256,51 @@ function parseBingImages(html) {
 
     const image_url = obj.murl || obj.imgurl || obj.turl || null;
     const product_url = obj.purl || null;
+
     if (image_url && product_url) results.push({ product_url, image_url });
   }
   return results;
 }
 
 async function collectFromBing(query, qIndex) {
-  const candidates = [];
-
+  const out = [];
   let first = 0;
+
   for (let page = 0; page < PAGES_PER_QUERY; page++) {
     const url =
       `https://www.bing.com/images/search?q=${encodeURIComponent(query)}` +
       `&first=${first}&count=${COUNT_PER_PAGE}&form=HDRSC2`;
 
-    logDebug(`BING q${qIndex} page=${page} first=${first}`);
     const { status, text: html } = await fetchText(url);
-    logDebug(`BING q${qIndex} status=${status} chars=${html.length}`);
-
-    writeDebugFile(`bing_q${qIndex}_p${page}.html`, html.slice(0, 200000));
+    logDebug(`BING q${qIndex} page=${page} status=${status} chars=${html.length}`);
+    writeDebugFile(`bing_q${qIndex}_p${page}.html`, html.slice(0, 120000));
 
     const items = parseBingImages(html);
-    logDebug(`BING q${qIndex} parsed=${items.length}`);
     if (items.length === 0) break;
 
     for (const it of items) {
       const retailer = normalizeRetailer(it.product_url);
-      if (!retailer) continue;
 
-      if (retailer === "pinterest" && !pinterestLooksRelevant(it.product_url, it.image_url)) continue;
+      if (retailer === "pinterest") {
+        if (!pinterestLooksRelevant(it.product_url, it.image_url)) continue;
+      } else if (retailer === "other") {
+        if (!otherLooksRelevant(it.product_url, it.image_url)) continue;
+      } else {
+        // known retailer: still require brand presence somewhere (prevents random matches)
+        const s = `${it.product_url} ${it.image_url}`.toLowerCase();
+        const hasBrand =
+          s.includes("hot-wheels") || s.includes("hotwheels") || (s.includes("hot") && s.includes("wheels"));
+        if (!hasBrand) continue;
+      }
 
-      candidates.push({ retailer, product_url: it.product_url, image_url: it.image_url });
-      if (candidates.length >= MAX_CANDIDATES) return candidates;
+      out.push({ retailer, product_url: it.product_url, image_url: it.image_url });
     }
 
     first += COUNT_PER_PAGE;
-    await sleep(250);
+    await sleep(220);
   }
 
-  return candidates;
+  return out;
 }
 
 function dedupeByStyleKeepBest(items) {
@@ -261,9 +335,8 @@ async function downloadImage(imageUrl, productUrl) {
   const rel = `${IMG_DIR}/${id}${ext}`;
   const abs = path.join(process.cwd(), rel);
 
-  if (fs.existsSync(abs)) return `./${rel}`;
+  if (fs.existsSync(abs)) return `images/hot-wheels/${id}${ext}`;
 
-  // Try fetch with referer set to product page (helps some CDNs)
   const res = await fetch(imageUrl, {
     redirect: "follow",
     headers: {
@@ -274,40 +347,48 @@ async function downloadImage(imageUrl, productUrl) {
     },
   });
 
-  if (!res.ok) {
-    logDebug(`IMG FAIL ${res.status} ${imageUrl}`);
-    return null;
-  }
+  if (!res.ok) return null;
 
   const buf = Buffer.from(await res.arrayBuffer());
-  // Skip tiny “blocked” responses
-  if (buf.length < 2000) {
-    logDebug(`IMG TINY ${buf.length} ${imageUrl}`);
-    return null;
-  }
+  if (buf.length < 2000) return null;
 
   fs.writeFileSync(abs, buf);
-  return `./${rel}`;
+  return `images/hot-wheels/${id}${ext}`;
+}
+
+function applyPerRetailerCap(items) {
+  const counts = {};
+  const out = [];
+
+  for (const it of items) {
+    const cap = PER_RETAILER_CAP[it.retailer] ?? 120;
+    counts[it.retailer] = counts[it.retailer] ?? 0;
+    if (counts[it.retailer] >= cap) continue;
+    counts[it.retailer] += 1;
+    out.push(it);
+  }
+  return out;
 }
 
 async function main() {
   ensureDirs();
   fs.writeFileSync(`${DEBUG_DIR}/run.txt`, "", "utf-8");
-  logDebug("Collector start");
+  logDebug("Collector start (other-domain fallback enabled)");
 
-  // 1) Collect lots of candidates
+  // 1) Collect a lot of candidates
   let all = [];
   for (let i = 0; i < QUERIES.length; i++) {
-    const q = QUERIES[i];
-    const got = await collectFromBing(q, i);
-    logDebug(`Query ${i} got ${got.length}`);
+    const got = await collectFromBing(QUERIES[i], i);
+    logDebug(`Query ${i + 1}/${QUERIES.length} got=${got.length}`);
     all = all.concat(got);
-    if (all.length >= MAX_CANDIDATES) break;
+
+    // stop once huge
+    if (all.length > 9000) break;
   }
 
-  logDebug(`Total raw candidates: ${all.length}`);
+  logDebug(`Raw candidates total=${all.length}`);
 
-  // 2) Quick image-url dedupe
+  // 2) Deduplicate by image URL quickly
   {
     const seen = new Set();
     all = all.filter((x) => {
@@ -317,27 +398,34 @@ async function main() {
     });
   }
 
-  // 3) Style dedupe (one per product)
-  const deduped = dedupeByStyleKeepBest(all);
-  logDebug(`After style dedupe: ${deduped.length}`);
+  // 3) Dedupe by product/style
+  let deduped = dedupeByStyleKeepBest(all);
+  logDebug(`After style dedupe=${deduped.length}`);
 
-  // 4) Download images locally + write final JSON
+  // 4) Prefer higher-res images first
+  deduped.sort((a, b) => imageScore(b.image_url) - imageScore(a.image_url));
+
+  // 5) Cap per retailer so "other" doesn't crush everything
+  deduped = applyPerRetailerCap(deduped);
+
+  // 6) Download images locally and build final output
   const final = [];
   for (const item of deduped) {
     if (final.length >= MAX_ITEMS) break;
+
     const local = await downloadImage(item.image_url, item.product_url);
     if (!local) continue;
 
     final.push({
       retailer: item.retailer,
       product_url: item.product_url,
-      image_url: local, // LOCAL PATH now
+      image_url: local, // local path
     });
   }
 
   fs.writeFileSync(OUT_JSON, JSON.stringify(final, null, 2), "utf-8");
-  logDebug(`Final written: ${final.length}`);
-  console.log(`Finished. Total items written: ${final.length}`);
+  logDebug(`Final written=${final.length}`);
+  console.log(`Finished. Items written: ${final.length}`);
 }
 
 main().catch((e) => {
