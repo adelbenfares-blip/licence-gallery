@@ -1,1 +1,32 @@
-[]
+[
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/en_in/productpage.1117459043.html",
+    "image_url": "https://lp2.hm.com/hmgoepprod?set=quality[79]%2Csource[%2F5f%2Fdb%2F5fdb84d90ca00bd66be262b9e21eadf34622e078.jpg]%2Corigin[dam]%2Ccategory[kids_boys_clothing_jumperssweatshirts_sweatshirts]%2Ctype[DESCRIPTIVESTILLLIFE]%2Cres[m]%2Chmver[2]&call=url[file:/product/main]"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/en_us/productpage.1016109014.html",
+    "image_url": "https://image.hm.com/assets/hm/21/37/213765168704e492bedd407c4eadb9edb5638278.jpg?imwidth=2160"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/en_ca/productpage.1172232010.html",
+    "image_url": "https://image.hm.com/assets/hm/a0/79/a07983d6c1468977047508db5f45957245cad393.jpg?imwidth=2160"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/en_us/productpage.1063809047.html",
+    "image_url": "https://image.hm.com/assets/hm/18/70/1870754ca9ee14d681fcf7468f5e3a58c5b00a69.jpg?imwidth=2160"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/en_asia3/productpage.1212734001.html",
+    "image_url": "https://image.hm.com/assets/hm/d7/43/d743e6d7878bffec6422aef5986ac507e105ad20.jpg?imwidth=1536"
+  },
+  {
+    "retailer": "hm",
+    "product_url": "https://www2.hm.com/en_us/productpage.1207712002.html",
+    "image_url": "https://image.hm.com/assets/hm/38/f7/38f7ae7640a4bf13601d21f22fc1e589d064a986.jpg?imwidth=768"
+  }
+]
