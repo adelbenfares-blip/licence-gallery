@@ -1,32 +1,27 @@
 [
   {
     "retailer": "hm",
-    "product_url": "https://www2.hm.com/en_in/productpage.1117459043.html",
-    "image_url": "https://lp2.hm.com/hmgoepprod?set=quality[79]%2Csource[%2F5f%2Fdb%2F5fdb84d90ca00bd66be262b9e21eadf34622e078.jpg]%2Corigin[dam]%2Ccategory[kids_boys_clothing_jumperssweatshirts_sweatshirts]%2Ctype[DESCRIPTIVESTILLLIFE]%2Cres[m]%2Chmver[2]&call=url[file:/product/main]"
+    "product_url": "https://www2.hm.com/el_gr/productpage.1232761014.html",
+    "image_url": "./images/hot-wheels/081d3b029207bb8778d8554da1249319e02e8626.jpg"
   },
   {
     "retailer": "hm",
-    "product_url": "https://www2.hm.com/en_us/productpage.1016109014.html",
-    "image_url": "https://image.hm.com/assets/hm/21/37/213765168704e492bedd407c4eadb9edb5638278.jpg?imwidth=2160"
+    "product_url": "https://www2.hm.com/en_us/productpage.0969084003.html",
+    "image_url": "./images/hot-wheels/a0cc405788cabc4683552c6ad1e7377246c7161e.jpg"
   },
   {
     "retailer": "hm",
-    "product_url": "https://www2.hm.com/en_ca/productpage.1172232010.html",
-    "image_url": "https://image.hm.com/assets/hm/a0/79/a07983d6c1468977047508db5f45957245cad393.jpg?imwidth=2160"
+    "product_url": "https://www2.hm.com/es_mx/productpage.1118690033.html",
+    "image_url": "./images/hot-wheels/17d95607a640a687470c5efe9f4e8408c55d4dc0.jpg"
   },
   {
     "retailer": "hm",
-    "product_url": "https://www2.hm.com/en_us/productpage.1063809047.html",
-    "image_url": "https://image.hm.com/assets/hm/18/70/1870754ca9ee14d681fcf7468f5e3a58c5b00a69.jpg?imwidth=2160"
+    "product_url": "https://www2.hm.com/es_mx/productpage.1027477030.html",
+    "image_url": "./images/hot-wheels/9045b6309816b679380958386eb16357d0f99b86.jpg"
   },
   {
     "retailer": "hm",
-    "product_url": "https://www2.hm.com/en_asia3/productpage.1212734001.html",
-    "image_url": "https://image.hm.com/assets/hm/d7/43/d743e6d7878bffec6422aef5986ac507e105ad20.jpg?imwidth=1536"
-  },
-  {
-    "retailer": "hm",
-    "product_url": "https://www2.hm.com/en_us/productpage.1207712002.html",
-    "image_url": "https://image.hm.com/assets/hm/38/f7/38f7ae7640a4bf13601d21f22fc1e589d064a986.jpg?imwidth=768"
+    "product_url": "https://www2.hm.com/en_hk/productpage.0963510002.html",
+    "image_url": "./images/hot-wheels/615b4f1629c8e68b2a090d2a841cdab024bb27eb.jpg"
   }
 ]
