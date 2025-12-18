@@ -4,222 +4,169 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Licence Gallery</title>
-
   <style>
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, Arial, sans-serif;
-      margin: 0;
-      padding: 16px;
-      background: #fff;
-      color: #111;
-    }
-
-    header {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-      flex-wrap: wrap;
-      margin-bottom: 14px;
-    }
-
-    strong {
-      font-size: 18px;
-      letter-spacing: .02em;
-    }
-
-    .muted {
-      color: #666;
-      font-size: 14px;
-    }
-
-    select, button {
-      padding: 8px 12px;
-      border-radius: 10px;
-      border: 1px solid #ddd;
-      background: #fff;
-      cursor: pointer;
-      font-size: 14px;
-    }
-
-    button:disabled {
-      opacity: .4;
-      cursor: not-allowed;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 10px;
-    }
-
-    @media (min-width: 640px) {
-      .grid { grid-template-columns: repeat(3, 1fr); }
-    }
-
-    @media (min-width: 900px) {
-      .grid { grid-template-columns: repeat(5, 1fr); }
-    }
-
-    @media (min-width: 1200px) {
-      .grid { grid-template-columns: repeat(7, 1fr); }
-    }
-
-    a.tile {
-      display: block;
-      border-radius: 14px;
-      overflow: hidden;
-      background: #f3f3f3;
-      position: relative;
-      aspect-ratio: 3 / 4;
-    }
-
-    a.tile:hover {
-      outline: 2px solid #111;
-      outline-offset: -2px;
-    }
-
-    img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-    }
-
-    .pager {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-      margin-top: 16px;
-      flex-wrap: wrap;
+    body { font-family: system-ui, Arial; margin: 0; padding: 16px; }
+    header { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom: 12px; }
+    .grid { display:grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    @media (min-width: 640px){ .grid{ grid-template-columns: repeat(3, 1fr);} }
+    @media (min-width: 900px){ .grid{ grid-template-columns: repeat(5, 1fr);} }
+    @media (min-width: 1200px){ .grid{ grid-template-columns: repeat(7, 1fr);} }
+    a.tile { display:block; border-radius:12px; overflow:hidden; background:#f2f2f2; aspect-ratio: 3/4; }
+    img { width:100%; height:100%; object-fit: cover; display:block; }
+    .pager { display:flex; gap:10px; align-items:center; margin-top: 12px; flex-wrap:wrap; }
+    button { padding: 8px 12px; border-radius: 10px; border: 1px solid #ddd; background: #fff; cursor:pointer; }
+    button:disabled { opacity: .5; cursor:not-allowed; }
+    select { padding: 8px 10px; border-radius: 10px; border: 1px solid #ddd; }
+    .muted { color:#666; font-size: 14px; }
+    .error {
+      margin: 12px 0;
+      padding: 10px 12px;
+      border: 1px solid #f2b8b5;
+      background: #fff2f2;
+      border-radius: 12px;
+      color: #8a1f17;
+      display:none;
+      white-space: pre-wrap;
     }
   </style>
 </head>
-
 <body>
+  <header>
+    <strong id="title">HOT WHEELS</strong>
+    <span class="muted" id="count"></span>
+    <label class="muted">Retailer:</label>
+    <select id="retailer"></select>
+  </header>
 
-<header>
-  <strong>HOT WHEELS</strong>
-  <span class="muted" id="count"></span>
+  <div class="error" id="err"></div>
+  <div class="grid" id="grid"></div>
 
-  <span class="muted">Retailer:</span>
-  <select id="retailer"></select>
-</header>
+  <div class="pager">
+    <button id="prev">Prev</button>
+    <span class="muted" id="pageInfo"></span>
+    <button id="next">Next</button>
+  </div>
 
-<div class="grid" id="grid"></div>
+  <script>
+    const PAGE_SIZE = 200;
+    const params = new URLSearchParams(location.search);
+    const page = Math.max(1, parseInt(params.get("page") || "1", 10));
 
-<div class="pager">
-  <button id="prev">Prev</button>
-  <span class="muted" id="pageInfo"></span>
-  <button id="next">Next</button>
-</div>
+    const gridEl = document.getElementById("grid");
+    const countEl = document.getElementById("count");
+    const pageInfoEl = document.getElementById("pageInfo");
+    const prevBtn = document.getElementById("prev");
+    const nextBtn = document.getElementById("next");
+    const retailerSel = document.getElementById("retailer");
+    const errEl = document.getElementById("err");
 
-<script>
-  const PAGE_SIZE = 200;
-
-  const params = new URLSearchParams(location.search);
-  const page = Math.max(1, parseInt(params.get("page") || "1", 10));
-  const retailerParam = (params.get("retailer") || "all").toLowerCase();
-
-  const gridEl = document.getElementById("grid");
-  const countEl = document.getElementById("count");
-  const pageInfoEl = document.getElementById("pageInfo");
-  const prevBtn = document.getElementById("prev");
-  const nextBtn = document.getElementById("next");
-  const retailerSel = document.getElementById("retailer");
-
-  function setUrl(newPage, retailer) {
-    const p = new URLSearchParams(location.search);
-    p.set("page", String(newPage));
-    if (retailer && retailer !== "all") p.set("retailer", retailer);
-    else p.delete("retailer");
-    location.search = p.toString();
-  }
-
-  function normaliseRetailer(r) {
-    return (r || "other").toLowerCase();
-  }
-
-  function niceLabel(r) {
-    const map = {
-      zara: "Zara",
-      hm: "H&M",
-      next: "Next",
-      asos: "ASOS",
-      zalando: "Zalando",
-      pinterest: "Pinterest",
-      boxlunch: "BoxLunch",
-      pacsun: "PacSun",
-      bucketsandspades: "Buckets & Spades",
-      other: "Other"
-    };
-    return map[r] || r;
-  }
-
-  async function init() {
-    const res = await fetch("data/hot-wheels.json", { cache: "no-store" });
-    const all = await res.json();
-
-    // Build retailer list dynamically
-    const retailers = Array.from(
-      new Set(all.map(x => normaliseRetailer(x.retailer)))
-    ).sort();
-
-    retailerSel.innerHTML = "";
-    retailerSel.append(new Option("All", "all"));
-    retailers.forEach(r => retailerSel.append(new Option(niceLabel(r), r)));
-
-    retailerSel.value = retailerParam;
-    retailerSel.onchange = () => setUrl(1, retailerSel.value);
-
-    const filtered = retailerParam === "all"
-      ? all
-      : all.filter(x => normaliseRetailer(x.retailer) === retailerParam);
-
-    const total = filtered.length;
-    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-    const currentPage = Math.min(page, totalPages);
-
-    const start = (currentPage - 1) * PAGE_SIZE;
-    const items = filtered.slice(start, start + PAGE_SIZE);
-
-    countEl.textContent = total
-      ? `${total} items`
-      : "No items yet";
-
-    pageInfoEl.textContent = `Page ${currentPage} of ${totalPages}`;
-
-    prevBtn.disabled = currentPage <= 1;
-    nextBtn.disabled = currentPage >= totalPages;
-
-    prevBtn.onclick = () => setUrl(currentPage - 1, retailerSel.value);
-    nextBtn.onclick = () => setUrl(currentPage + 1, retailerSel.value);
-
-    gridEl.innerHTML = "";
-
-    for (const p of items) {
-      const a = document.createElement("a");
-      a.className = "tile";
-      a.href = p.product_url;
-      a.target = "_blank";
-      a.rel = "noreferrer";
-
-      const img = document.createElement("img");
-      img.loading = "lazy";
-      img.src = p.image_url;
-      img.alt = "";
-
-      // Hide broken images completely
-      img.onerror = () => {
-        a.remove();
-      };
-
-      a.appendChild(img);
-      gridEl.appendChild(a);
+    function showErr(msg){
+      errEl.style.display = "block";
+      errEl.textContent = msg;
     }
-  }
 
-  init();
-</script>
+    function setUrl(newPage, retailer) {
+      const p = new URLSearchParams(location.search);
+      p.set("page", String(newPage));
+      if (retailer && retailer !== "all") p.set("retailer", retailer);
+      else p.delete("retailer");
+      location.search = p.toString();
+    }
 
+    function normRetailer(r){
+      return (r || "other").toLowerCase().replace(/[\s&]+/g,"");
+    }
+
+    function niceRetailer(r){
+      const map = {
+        all: "All",
+        zara: "Zara",
+        hm: "H&M",
+        next: "Next",
+        asos: "ASOS",
+        zalando: "Zalando",
+        pinterest: "Pinterest",
+        boxlunch: "BoxLunch",
+        pacsun: "PacSun",
+        bucketsandspades: "Buckets & Spades",
+        other: "Other"
+      };
+      return map[r] || r;
+    }
+
+    (async function init(){
+      const retailerParam = normRetailer(params.get("retailer") || "all");
+
+      let all;
+      try {
+        const url = "data/hot-wheels.json?v=" + Date.now();
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) throw new Error(`Fetch failed: ${res.status} ${res.statusText}\nURL: ${res.url}`);
+        all = await res.json();
+        if (!Array.isArray(all)) throw new Error("JSON is not an array");
+      } catch (e) {
+        showErr("COULD NOT LOAD data/hot-wheels.json\n\n" + (e?.message || String(e)));
+        countEl.textContent = "No items yet";
+        pageInfoEl.textContent = "Page 1 of 1";
+        prevBtn.disabled = true;
+        nextBtn.disabled = true;
+        return;
+      }
+
+      // Build retailer dropdown dynamically from data
+      const retailers = Array.from(new Set(all.map(x => normRetailer(x.retailer))))
+        .filter(Boolean)
+        .sort();
+
+      retailerSel.innerHTML = "";
+      retailerSel.appendChild(new Option("All", "all"));
+      retailers.forEach(r => retailerSel.appendChild(new Option(niceRetailer(r), r)));
+
+      retailerSel.value = retailers.includes(retailerParam) ? retailerParam : "all";
+      retailerSel.addEventListener("change", () => setUrl(1, retailerSel.value));
+
+      const filtered = (retailerSel.value === "all")
+        ? all
+        : all.filter(x => normRetailer(x.retailer) === retailerSel.value);
+
+      const total = filtered.length;
+      const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+      const currentPage = Math.min(page, totalPages);
+
+      const start = (currentPage - 1) * PAGE_SIZE;
+      const items = filtered.slice(start, start + PAGE_SIZE);
+
+      countEl.textContent = total ? `${total} items` : "No items yet";
+      pageInfoEl.textContent = `Page ${currentPage} of ${totalPages}`;
+
+      prevBtn.disabled = currentPage <= 1;
+      nextBtn.disabled = currentPage >= totalPages;
+
+      prevBtn.onclick = () => setUrl(currentPage - 1, retailerSel.value);
+      nextBtn.onclick = () => setUrl(currentPage + 1, retailerSel.value);
+
+      gridEl.innerHTML = "";
+      for (const p of items) {
+        if (!p?.image_url || !p?.product_url) continue;
+
+        const a = document.createElement("a");
+        a.className = "tile";
+        a.href = p.product_url;
+        a.target = "_blank";
+        a.rel = "noreferrer";
+
+        const img = document.createElement("img");
+        img.loading = "lazy";
+        img.alt = "";
+        img.src = p.image_url;
+
+        // Remove broken tiles
+        img.onerror = () => a.remove();
+
+        a.appendChild(img);
+        gridEl.appendChild(a);
+      }
+    })();
+  </script>
 </body>
 </html>
